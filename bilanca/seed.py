@@ -16,8 +16,11 @@ DEFAULT_CATEGORIES: list[tuple[str, CategoryKind, str]] = [
     ("Naročnine", CategoryKind.EXPENSE, "#a855f7"),
     ("Zdravje in lekarna", CategoryKind.EXPENSE, "#ef4444"),
     ("Trgovine in nakupi", CategoryKind.EXPENSE, "#ec4899"),
+    ("Oblačila in obutev", CategoryKind.EXPENSE, "#f472b6"),
     ("Zabava in prosti čas", CategoryKind.EXPENSE, "#8b5cf6"),
     ("Položnice in komunala", CategoryKind.EXPENSE, "#0ea5e9"),
+    ("Zavarovanja", CategoryKind.EXPENSE, "#14b8a6"),
+    ("Bančni stroški", CategoryKind.EXPENSE, "#78716c"),
     ("Gotovina (dvig)", CategoryKind.EXPENSE, "#64748b"),
     ("Drugo (odhodki)", CategoryKind.EXPENSE, "#9ca3af"),
     # Prihodki
