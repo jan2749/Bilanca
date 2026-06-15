@@ -17,11 +17,15 @@ engine = create_engine(
 
 
 def init_db() -> None:
-    """Ustvari tabele, ce se ne obstajajo."""
+    """Ustvari tabele, ce se ne obstajajo, in vstavi privzete kategorije."""
     # Uvoz modelov registrira tabele na SQLModel.metadata.
     import bilanca.models  # noqa: F401
+    from bilanca.seed import seed_categories
 
     SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        seed_categories(session)
 
 
 def get_session() -> Iterator[Session]:
