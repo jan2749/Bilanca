@@ -1,0 +1,2 @@
+# Normaliziraj konce vrstic: v repozitoriju LF, v delovni kopiji po platformi.
+* text=auto eol=lf

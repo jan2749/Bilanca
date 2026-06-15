@@ -60,3 +60,7 @@ button.secondary { background: var(--panel); color: var(--text); border: 1px sol
 .cat-form { display: flex; align-items: center; gap: .5rem; }
 .cat-form select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: .3rem .4rem; max-width: 200px; }
 .rule-check { font-size: .75rem; color: var(--muted); white-space: nowrap; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+.chart-card h2 { font-size: 1rem; margin: 0 0 1rem; }
+.chart-card canvas { max-height: 320px; }

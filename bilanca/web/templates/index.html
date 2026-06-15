@@ -12,7 +12,44 @@
   <div class="card stat"><span class="muted">Transakcij</span><strong>{{ tx_count }}</strong></div>
   <div class="card stat"><span class="muted">Prilivi</span><strong class="pos">{{ '%.2f'|format(income / 100) }} €</strong></div>
   <div class="card stat"><span class="muted">Odlivi</span><strong class="neg">{{ '%.2f'|format(expense / 100) }} €</strong></div>
+  <div class="card stat"><span class="muted">Razlika</span><strong class="{{ 'pos' if (income + expense) >= 0 else 'neg' }}">{{ '%.2f'|format((income + expense) / 100) }} €</strong></div>
 </div>
-<p class="muted">Grafi porabe in trendov pridejo v naslednjem koraku.</p>
+
+<div class="charts">
+  <div class="card chart-card">
+    <h2>Poraba po kategorijah</h2>
+    <canvas id="catChart"></canvas>
+  </div>
+  <div class="card chart-card">
+    <h2>Mesečni prihodki in odhodki</h2>
+    <canvas id="monthChart"></canvas>
+  </div>
+</div>
+
+<script>
+  const catLabels = {{ cat_labels|tojson }};
+  const catValues = {{ cat_values|tojson }};
+  const catColors = {{ cat_colors|tojson }};
+  const monthLabels = {{ month_labels|tojson }};
+  const monthIncome = {{ month_income|tojson }};
+  const monthExpense = {{ month_expense|tojson }};
+  Chart.defaults.color = '#94a3b8';
+  Chart.defaults.borderColor = '#334155';
+
+  new Chart(document.getElementById('catChart'), {
+    type: 'doughnut',
+    data: { labels: catLabels, datasets: [{ data: catValues, backgroundColor: catColors, borderWidth: 0 }] },
+    options: { plugins: { legend: { position: 'right' } } }
+  });
+
+  new Chart(document.getElementById('monthChart'), {
+    type: 'bar',
+    data: { labels: monthLabels, datasets: [
+      { label: 'Prilivi', data: monthIncome, backgroundColor: '#4ade80' },
+      { label: 'Odlivi', data: monthExpense, backgroundColor: '#f87171' }
+    ] },
+    options: { scales: { y: { beginAtZero: true } } }
+  });
+</script>
 {% endif %}
 {% endblock %}

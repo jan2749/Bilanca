@@ -13,6 +13,7 @@ from bilanca.db import get_session
 from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
+from bilanca.insights.trends import monthly_summary, spending_by_category
 from bilanca.models import Account, Category, Transaction
 
 router = APIRouter()
@@ -24,10 +25,23 @@ def index(request: Request, session: Session = Depends(get_session)):
     txns = session.exec(select(Transaction)).all()
     income = sum(t.amount_cents for t in txns if t.amount_cents > 0)
     expense = sum(t.amount_cents for t in txns if t.amount_cents < 0)
+
+    by_cat = spending_by_category(session)
+    months = monthly_summary(session)
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"tx_count": len(txns), "income": income, "expense": expense},
+        {
+            "tx_count": len(txns),
+            "income": income,
+            "expense": expense,
+            "cat_labels": [s.name for s in by_cat],
+            "cat_values": [s.amount_eur for s in by_cat],
+            "cat_colors": [s.color for s in by_cat],
+            "month_labels": [m.month for m in months],
+            "month_income": [m.income_eur for m in months],
+            "month_expense": [m.expense_eur for m in months],
+        },
     )
 
 
