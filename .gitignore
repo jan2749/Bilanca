@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualna okolja
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# Baza in lokalni podatki
+*.db
+*.sqlite
+*.sqlite3
+data/
+uploads/
+
+# Okoljske spremenljivke / skrivnosti
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Testi / orodja
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
