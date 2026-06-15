@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Transakcije · Bilanca{% endblock %}
 {% block content %}
-<h1>Transakcije</h1>
+<div class="row-between">
+  <h1>Transakcije</h1>
+  {% if transactions %}
+  <form action="/recategorize" method="post">
+    <button type="submit" class="secondary">↻ Ponovno razvrsti</button>
+  </form>
+  {% endif %}
+</div>
 <p class="muted">{{ transactions|length }} transakcij{% if account %} · račun {{ account.iban }}{% endif %}</p>
 
 {% if not transactions %}
@@ -9,16 +16,29 @@
 {% else %}
 <table class="txns">
   <thead>
-    <tr><th>Datum</th><th>Opis</th><th>Prejemnik</th><th class="num">Znesek</th></tr>
+    <tr><th>Datum</th><th>Opis</th><th class="num">Znesek</th><th>Kategorija</th></tr>
   </thead>
   <tbody>
     {% for t in transactions %}
     <tr>
       <td>{{ t.booking_date.strftime('%d.%m.%Y') }}</td>
-      <td>{{ t.purpose }}</td>
-      <td class="muted">{{ t.counterparty_name }}</td>
+      <td>{{ t.purpose }}{% if t.counterparty_name and t.counterparty_name != t.purpose %}
+            <div class="muted small">{{ t.counterparty_name }}</div>{% endif %}</td>
       <td class="num {{ 'pos' if t.amount_cents > 0 else 'neg' }}">
         {{ '%.2f'|format(t.amount_cents / 100) }} €
+      </td>
+      <td>
+        <form action="/transactions/{{ t.id }}/categorize" method="post" class="cat-form">
+          <select name="category_id" onchange="this.form.submit()">
+            <option value="">— Nerazvrščeno —</option>
+            {% for c in categories %}
+            <option value="{{ c.id }}" {{ 'selected' if c.id == t.category_id else '' }}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          <label class="rule-check" title="Ustvari pravilo za vse od tega prejemnika">
+            <input type="checkbox" name="create_rule" value="true"> za vse
+          </label>
+        </form>
       </td>
     </tr>
     {% endfor %}

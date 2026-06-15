@@ -54,3 +54,9 @@ table.txns { width: 100%; border-collapse: collapse; }
 table.txns th, table.txns td { padding: .55rem .5rem; border-bottom: 1px solid var(--border); text-align: left; }
 table.txns th { color: var(--muted); font-weight: 600; }
 table.txns .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.small { font-size: .8rem; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); margin: 0; padding: .45rem .9rem; }
+.cat-form { display: flex; align-items: center; gap: .5rem; }
+.cat-form select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: .3rem .4rem; max-width: 200px; }
+.rule-check { font-size: .75rem; color: var(--muted); white-space: nowrap; }

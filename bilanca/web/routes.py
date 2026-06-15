@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
+from bilanca.categorize.rules import apply_rules, set_category
 from bilanca.config import TEMPLATES_DIR
 from bilanca.db import get_session
 from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
-from bilanca.models import Account, Transaction
+from bilanca.models import Account, Category, Transaction
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -36,11 +37,29 @@ def transactions(request: Request, session: Session = Depends(get_session)):
         select(Transaction).order_by(Transaction.booking_date.desc(), Transaction.id.desc())
     ).all()
     account = session.exec(select(Account)).first()
+    categories = session.exec(select(Category).order_by(Category.kind, Category.name)).all()
     return templates.TemplateResponse(
         request,
         "transactions.html",
-        {"transactions": txns, "account": account},
+        {"transactions": txns, "account": account, "categories": categories},
     )
+
+
+@router.post("/transactions/{txn_id}/categorize")
+def categorize_txn(
+    txn_id: int,
+    category_id: int | None = Form(None),
+    create_rule: bool = Form(False),
+    session: Session = Depends(get_session),
+):
+    set_category(session, txn_id, category_id, create_rule=create_rule)
+    return RedirectResponse(url="/transactions", status_code=303)
+
+
+@router.post("/recategorize")
+def recategorize(session: Session = Depends(get_session)):
+    apply_rules(session, only_uncategorized=True)
+    return RedirectResponse(url="/transactions", status_code=303)
 
 
 @router.get("/import", response_class=HTMLResponse)

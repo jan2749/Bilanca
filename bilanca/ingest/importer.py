@@ -74,4 +74,11 @@ def import_source(
     session.add(batch)
     session.commit()
     session.refresh(batch)
+
+    # Samodejno kategoriziraj novo uvožene (zaklenjenih ročnih ne dira).
+    if inserted:
+        from bilanca.categorize.rules import apply_rules
+
+        apply_rules(session, only_uncategorized=True)
+
     return batch
