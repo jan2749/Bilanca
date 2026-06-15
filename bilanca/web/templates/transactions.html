@@ -12,7 +12,7 @@
 <p class="muted">{{ transactions|length }} transakcij{% if account %} · račun {{ account.iban }}{% endif %}</p>
 
 {% if not transactions %}
-<div class="card">Ni transakcij. <a href="/import">Uvozi izvoz prometa →</a></div>
+<div class="card">Ni transakcij. <a class="link-arrow" href="/import">Uvozi izvoz prometa →</a></div>
 {% else %}
 <table class="txns">
   <thead>

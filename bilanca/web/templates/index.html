@@ -5,7 +5,7 @@
 {% if tx_count == 0 %}
 <div class="card">
   <p>Dobrodošel v Bilanci. Za začetek naloži izvoz prometa iz svoje banke.</p>
-  <a href="/import">Uvozi transakcije →</a>
+  <a class="link-arrow" href="/import">Uvozi transakcije →</a>
 </div>
 {% else %}
 <div class="cards">
@@ -13,20 +13,7 @@
   <div class="card stat"><span class="muted">Prilivi</span><strong class="pos">{{ '%.2f'|format(income / 100) }} €</strong></div>
   <div class="card stat"><span class="muted">Odlivi</span><strong class="neg">{{ '%.2f'|format(expense / 100) }} €</strong></div>
   <div class="card stat"><span class="muted">Razlika</span><strong class="{{ 'pos' if (income + expense) >= 0 else 'neg' }}">{{ '%.2f'|format((income + expense) / 100) }} €</strong></div>
-  <a class="card stat link" href="/subscriptions"><span class="muted">Naročnine (~mesečno)</span><strong>{{ '%.2f'|format(sub_monthly) }} €</strong><span class="muted small">{{ sub_count }} aktivnih</span></a>
 </div>
-
-{% if price_hikes %}
-<div class="card alert-hike">
-  <h2>⚠ Tihe podražitve</h2>
-  <ul>
-    {% for h in price_hikes %}
-    <li><strong>{{ h.label }}</strong>: {{ '%.2f'|format(h.old_eur) }} € → {{ '%.2f'|format(h.new_eur) }} € (+{{ h.pct }} %)</li>
-    {% endfor %}
-  </ul>
-  <a href="/subscriptions">Vse naročnine →</a>
-</div>
-{% endif %}
 
 <div class="charts">
   <div class="card chart-card">

@@ -29,7 +29,6 @@ def index(request: Request, session: Session = Depends(get_session)):
 
     by_cat = spending_by_category(session)
     months = monthly_summary(session)
-    report = detect_recurring(session)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -43,9 +42,6 @@ def index(request: Request, session: Session = Depends(get_session)):
             "month_labels": [m.month for m in months],
             "month_income": [m.income_eur for m in months],
             "month_expense": [m.expense_eur for m in months],
-            "sub_count": len(report.active),
-            "sub_monthly": report.monthly_cost_eur,
-            "price_hikes": report.price_hikes,
         },
     )
 

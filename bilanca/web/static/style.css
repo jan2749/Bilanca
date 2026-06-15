@@ -66,6 +66,14 @@ button.secondary { background: var(--panel); color: var(--text); border: 1px sol
 .chart-card canvas { max-height: 320px; }
 .card.stat.link { text-decoration: none; color: var(--text); }
 .card.stat.link:hover { border-color: var(--accent); }
+
+/* Vsebinski "→" linki (npr. Poglej transakcije →). Brez privzetega modrega podčrtaja. */
+.link-arrow {
+  display: inline-flex; align-items: center; gap: .35rem;
+  color: var(--accent); text-decoration: none; font-weight: 600;
+  transition: gap .15s, filter .15s;
+}
+.link-arrow:hover { filter: brightness(1.15); gap: .55rem; }
 .alert-hike { border-color: #f59e0b; }
 .alert-hike h2 { margin: 0 0 .5rem; font-size: 1rem; color: #f59e0b; }
 .alert-hike ul { margin: .25rem 0; }
