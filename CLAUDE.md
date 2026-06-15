@@ -58,34 +58,49 @@ Source (NkbmCsvSource, ...) → NormalizedTxn → dedup hashing → Transaction 
   content-based key per transaction and appends an `occurrence` counter for repeats within
   the same import, so re-importing an overlapping date range skips already-stored rows
   while still allowing genuine same-day duplicates.
-- `bilanca/ingest/importer.py` — `import_source()` orchestrates: fetch → hash/dedup →
-  insert new `Transaction` rows → record an `ImportBatch` → run `apply_rules()` on newly
-  inserted, uncategorized transactions.
+- `bilanca/ingest/importer.py` — `import_source(session, source, user, filename)` orchestrates:
+  fetch → hash/dedup → insert new `Transaction` rows (into the user's account) → record an
+  `ImportBatch` → run `apply_rules()` on the user's newly inserted, uncategorized transactions.
+
+### Users / auth (`bilanca/auth.py`)
+
+The app is multi-user. `User` + `UserSession` (random token in an httponly `bilanca_session`
+cookie) back login/registration; passwords use stdlib `pbkdf2_hmac` (no external deps).
+`get_current_user` is a FastAPI dependency that raises `AuthRedirect` (handled in `main.py`
+→ redirect to `/login`) when not signed in. **All data is scoped per user**: `Account` and
+`ImportBatch` carry `user_id`; transactions are reached via the user's accounts. `Category`
+and `Rule` have a **nullable** `user_id` — `NULL` means a shared system row (seeded defaults),
+non-null means a user's own category/learned rule.
 
 ### Data model (`bilanca/models.py`)
 
 All monetary amounts are stored as **integer cents** (`amount_cents`), signed: negative =
-expense, positive = income. Never use floats for money. Key tables: `Account`, `Category`
-(hierarchical via `parent_id`, has a `kind`: expense/income/transfer), `Rule`, `Transaction`
-(has `dedup_hash` unique constraint, `category_locked` flag), `ImportBatch`.
+expense, positive = income. Never use floats for money. Key tables: `User`, `UserSession`,
+`Account` (per-user), `Category` (hierarchical via `parent_id`, `kind`: expense/income/transfer),
+`Rule`, `Transaction`, `ImportBatch`. `dedup_hash` is **not** globally unique — uniqueness is
+the composite `(account_id, dedup_hash)`, so two users can hold the same transaction.
 
 ### Categorization (`bilanca/categorize/`)
 
 - `defaults.py` — seeded system rules (`DEFAULT_RULES`) matching real Slovenian merchant
   strings (Mercator, Spar, Hofer, Petrol, Telemach, etc.) to category names. Seeded once via
   `seed_rules()`, called from `init_db()`.
-- `rules.py` — `apply_rules()` runs rules ordered by `priority` desc (first match wins),
-  skipping transactions where `category_locked=True`. `set_category()` is the manual
-  override path: locks the transaction, and optionally (`create_rule=True`) learns a new
-  USER-sourced rule from the counterparty name (priority `USER_RULE_PRIORITY=500`, so
-  learned rules always outrank system defaults) and immediately re-applies it to other
-  matching, unlocked transactions.
+- `rules.py` — `apply_rules(session, user, ...)` runs system + that user's rules ordered by
+  `priority` desc (first match wins), only over the user's transactions, skipping
+  `category_locked=True`. `set_category(session, user, txn_id, ...)` is the manual override
+  path: verifies ownership, locks the transaction, and optionally (`create_rule=True`) learns
+  a USER-sourced rule (tagged with `user_id`, priority `USER_RULE_PRIORITY=500`) from the
+  counterparty name and re-applies it to the user's other matching, unlocked transactions.
+- `suggest.py` — `uncategorized_groups()` powers the post-import "razvrsti zdaj" screen:
+  groups the user's uncategorized expenses by normalized merchant (descending by total spend);
+  assigning one representative via `set_category(create_rule=True)` clears the whole group.
 
 ### Insights (`bilanca/insights/`)
 
-- `trends.py` — spending-by-category and monthly income/expense aggregates for the
-  dashboard charts.
-- `recurring.py` — subscription/recurring-charge detection. Groups expenses by
+- `trends.py` — `spending_by_category()` / `monthly_summary()` take `user_id` and an optional
+  `date_from`/`date_to` window (the dashboard's from–to filter).
+- `recurring.py` — subscription detection. **Currently hidden from the UI** (unreliable with
+  little history); the code and tests remain for a future rework. Groups expenses by
   `(normalized merchant, exact amount)`, infers a period from the median gap between dates
   (only **monthly** and **yearly** periods are considered — weekly habitual purchases like
   lunch are deliberately excluded to avoid false positives), and flags a subscription
@@ -98,7 +113,8 @@ expense, positive = income. Never use floats for money. Key tables: `Account`, `
 
 FastAPI routes in `routes.py` render Jinja2 templates (`web/templates/`) styled via
 `web/static/style.css`, with Chart.js for the dashboard charts and a plain HTML5
-drag-and-drop file input for CSV upload (no JS framework/build step).
+drag-and-drop file input for CSV upload (no JS framework/build step). All pages except
+`/login` and `/register` require a signed-in user (`Depends(get_current_user)`).
 
 ## Testing conventions
 
@@ -106,3 +122,5 @@ drag-and-drop file input for CSV upload (no JS framework/build step).
 (not a real export; real exports contain personal data and must never be committed). It
 deliberately includes Slovenian characters, trailing-space-padded descriptions, a genuine
 same-day duplicate pair, and a blank row, to exercise the parser/dedup edge cases.
+`conftest.py` also exposes `make_user(session)` — most tests now need a `User` because
+`import_source`, `apply_rules`/`set_category`, and the trends aggregates are all user-scoped.
