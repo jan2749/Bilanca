@@ -28,8 +28,13 @@ from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
 from bilanca.insights.recurring import detect as detect_recurring
-from bilanca.insights.trends import monthly_summary, spending_by_category
-from bilanca.models import Account, Category, Transaction, User
+from bilanca.insights.trends import (
+    coverage_gaps,
+    monthly_summary,
+    spending_by_category,
+    yearly_comparison,
+)
+from bilanca.models import Account, Category, ImportBatch, Transaction, User
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -165,7 +170,31 @@ def index(
     expense = sum(t.amount_cents for t in txns if t.amount_cents < 0)  # negativen
 
     by_cat = spending_by_category(session, user.id, date_from, date_to)
-    months = monthly_summary(session, user.id, date_from, date_to)
+
+    period_from = date_from or data_from
+    period_to = date_to or data_to
+    # Za daljša obdobja (>2 leti) je mesečni prikaz preveč skrčen, zato preklopimo na leta.
+    granularity = "month"
+    if period_from and period_to:
+        span_months = (period_to.year - period_from.year) * 12 + (
+            period_to.month - period_from.month
+        ) + 1
+        if span_months > 24:
+            granularity = "year"
+    months = monthly_summary(session, user.id, date_from, date_to, granularity=granularity)
+    month_saldo = [round(m.income_eur - m.expense_eur, 2) for m in months]
+
+    yoy = yearly_comparison(session, user.id, date_from, date_to)
+
+    # Vrzeli med uvozi (npr. uvožena obdobja 1.1.-1.2. in 15.2.-28.2. → manjka 2.2.-14.2.),
+    # ki sodijo v prikazano obdobje.
+    gaps = []
+    if period_from and period_to:
+        for gap_from, gap_to in coverage_gaps(session, user.id):
+            if gap_from <= period_to and gap_to >= period_from:
+                gaps.append(
+                    (max(gap_from, period_from), min(gap_to, period_to))
+                )
 
     # Dodatne statistike (vse v izbranem obdobju).
     avg_monthly_expense = (-expense / 100 / len(months)) if months else 0.0
@@ -202,8 +231,8 @@ def index(
             "do": do or "",
             "data_from": data_from,
             "data_to": data_to,
-            "period_from": date_from or data_from,
-            "period_to": date_to or data_to,
+            "period_from": period_from,
+            "period_to": period_to,
             "is_filtered": bool(date_from or date_to),
             "avg_monthly_expense": avg_monthly_expense,
             "savings_rate": savings_rate,
@@ -215,6 +244,10 @@ def index(
             "month_labels": [m.month for m in months],
             "month_income": [m.income_eur for m in months],
             "month_expense": [m.expense_eur for m in months],
+            "month_saldo": month_saldo,
+            "granularity": granularity,
+            "yoy": yoy,
+            "gaps": gaps,
         },
     )
 
@@ -308,9 +341,32 @@ def subscriptions(
 # ---------------------------------------------------------------- uvoz
 
 
+def _user_import_batches(session: Session, user: User) -> list[dict]:
+    batches = session.exec(
+        select(ImportBatch)
+        .where(ImportBatch.user_id == user.id)
+        .order_by(ImportBatch.imported_at.desc())
+    ).all()
+    result = []
+    for b in batches:
+        bounds = session.exec(
+            select(
+                func.min(Transaction.booking_date), func.max(Transaction.booking_date)
+            ).where(Transaction.import_batch_id == b.id)
+        ).one()
+        result.append({"batch": b, "date_from": bounds[0], "date_to": bounds[1]})
+    return result
+
+
 @router.get("/import", response_class=HTMLResponse)
-def import_page(request: Request, user: User = Depends(get_current_user)):
-    return templates.TemplateResponse(request, "import.html", {"user": user})
+def import_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    return templates.TemplateResponse(
+        request, "import.html", {"user": user, "batches": _user_import_batches(session, user)}
+    )
 
 
 @router.post("/import", response_class=HTMLResponse)
@@ -333,4 +389,22 @@ async def import_upload(
         ctx["error"] = str(exc)
     except Exception as exc:  # noqa: BLE001 — uporabniku prijazno sporočilo namesto 500
         ctx["error"] = f"Nepričakovana napaka pri uvozu: {exc}"
+    ctx["batches"] = _user_import_batches(session, user)
     return templates.TemplateResponse(request, "import.html", ctx)
+
+
+@router.post("/import/{batch_id}/delete")
+def delete_import_batch(
+    batch_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    batch = session.get(ImportBatch, batch_id)
+    if batch is not None and batch.user_id == user.id:
+        for txn in session.exec(
+            select(Transaction).where(Transaction.import_batch_id == batch_id)
+        ).all():
+            session.delete(txn)
+        session.delete(batch)
+        session.commit()
+    return RedirectResponse(url="/import", status_code=303)

@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from bilanca.models import Account, Category, Transaction
@@ -76,23 +77,103 @@ def monthly_summary(
     user_id: int,
     date_from: date | None = None,
     date_to: date | None = None,
+    granularity: str = "month",
 ) -> list[MonthRow]:
-    """Prihodki in odhodki po mesecih (po datumu knjiženja), naraščajoče po mesecu."""
+    """Prihodki in odhodki po obdobjih (po datumu knjiženja), naraščajoče.
+
+    `granularity` je "month" (privzeto, oznake "YYYY-MM") ali "year" (oznake "YYYY") -
+    slednje se uporabi za daljša obdobja, kjer bi mesečni prikaz bil preveč skrčen.
+    """
+    fmt = "%Y" if granularity == "year" else "%Y-%m"
     income: dict[str, int] = defaultdict(int)
     expense: dict[str, int] = defaultdict(int)
     for t in session.exec(_scoped_txns(user_id, date_from, date_to)).all():
-        month = t.booking_date.strftime("%Y-%m")
+        period = t.booking_date.strftime(fmt)
         if t.amount_cents >= 0:
-            income[month] += t.amount_cents
+            income[period] += t.amount_cents
         else:
-            expense[month] += -t.amount_cents
+            expense[period] += -t.amount_cents
 
-    months = sorted(set(income) | set(expense))
+    periods = sorted(set(income) | set(expense))
     return [
         MonthRow(
-            month=m,
-            income_eur=round(income[m] / 100, 2),
-            expense_eur=round(expense[m] / 100, 2),
+            month=p,
+            income_eur=round(income[p] / 100, 2),
+            expense_eur=round(expense[p] / 100, 2),
         )
-        for m in months
+        for p in periods
     ]
+
+
+SLO_MONTH_LABELS = [
+    "jan", "feb", "mar", "apr", "maj", "jun",
+    "jul", "avg", "sep", "okt", "nov", "dec",
+]
+
+
+@dataclass
+class YearComparison:
+    years: list[int]
+    month_labels: list[str]
+    expense_by_year: dict[int, list[float]]
+
+
+def yearly_comparison(
+    session: Session,
+    user_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> YearComparison | None:
+    """Odhodki po mesecih, primerjani med leti (za prikaz sezonskih vzorcev).
+
+    Vrne None, če podatki pokrivajo manj kot dve leti - primerjava ne bi bila smiselna.
+    """
+    totals: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    query = _scoped_txns(user_id, date_from, date_to).where(Transaction.amount_cents < 0)
+    for t in session.exec(query).all():
+        totals[t.booking_date.year][t.booking_date.month] += -t.amount_cents
+
+    years = sorted(totals)
+    if len(years) < 2:
+        return None
+
+    expense_by_year = {
+        year: [round(totals[year].get(m, 0) / 100, 2) for m in range(1, 13)]
+        for year in years
+    }
+    return YearComparison(years=years, month_labels=SLO_MONTH_LABELS, expense_by_year=expense_by_year)
+
+
+def coverage_gaps(session: Session, user_id: int) -> list[tuple[date, date]]:
+    """Najde vrzeli med uvoženimi obdobji - npr. če dva uvoza ne pokrivata zaporednih datumov.
+
+    Za vsak uvozni paket (`import_batch_id`) vzame razpon (min, max) datuma knjiženja
+    njegovih transakcij, te razpone združi in vrne manjkajoče datumske razpone med njimi.
+    """
+    rows = session.exec(
+        select(
+            Transaction.import_batch_id,
+            func.min(Transaction.booking_date),
+            func.max(Transaction.booking_date),
+        )
+        .where(Transaction.account_id.in_(select(Account.id).where(Account.user_id == user_id)))
+        .group_by(Transaction.import_batch_id)
+    ).all()
+    intervals = sorted((lo, hi) for _, lo, hi in rows if lo is not None and hi is not None)
+    if len(intervals) < 2:
+        return []
+
+    merged = [intervals[0]]
+    for lo, hi in intervals[1:]:
+        last_lo, last_hi = merged[-1]
+        if lo <= last_hi + timedelta(days=1):
+            if hi > last_hi:
+                merged[-1] = (last_lo, hi)
+        else:
+            merged.append((lo, hi))
+
+    gaps: list[tuple[date, date]] = []
+    for (_, prev_hi), (next_lo, _) in zip(merged, merged[1:]):
+        if next_lo > prev_hi + timedelta(days=1):
+            gaps.append((prev_hi + timedelta(days=1), next_lo - timedelta(days=1)))
+    return gaps

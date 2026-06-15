@@ -23,6 +23,18 @@
   </form>
 </div>
 
+{% if gaps %}
+<div class="card alert-hike">
+  <h2>Manjkajo podatki</h2>
+  <p class="muted">Za izbrano obdobje ni uvoženih transakcij za naslednje datume, zato statistika zanje ne odraža dejanskega stanja:</p>
+  <ul>
+    {% for gap_from, gap_to in gaps %}
+    <li>{{ gap_from.strftime('%d.%m.%Y') }} – {{ gap_to.strftime('%d.%m.%Y') }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if tx_count == 0 %}
 <div class="card">V izbranem obdobju ni transakcij. <a class="link-arrow" href="/">Ponastavi obdobje →</a></div>
 {% else %}
@@ -53,9 +65,15 @@
     <canvas id="catChart"></canvas>
   </div>
   <div class="card chart-card">
-    <h2>Mesečni prihodki in odhodki</h2>
+    <h2>{{ 'Letni prihodki in odhodki' if granularity == 'year' else 'Mesečni prihodki in odhodki' }}</h2>
     <canvas id="monthChart"></canvas>
   </div>
+  {% if yoy %}
+  <div class="card chart-card">
+    <h2>Primerjava odhodkov po mesecih med leti</h2>
+    <canvas id="yoyChart"></canvas>
+  </div>
+  {% endif %}
 </div>
 
 <script>
@@ -65,6 +83,7 @@
   const monthLabels = {{ month_labels|tojson }};
   const monthIncome = {{ month_income|tojson }};
   const monthExpense = {{ month_expense|tojson }};
+  const monthSaldo = {{ month_saldo|tojson }};
   Chart.defaults.color = '#94a3b8';
   Chart.defaults.borderColor = '#334155';
 
@@ -78,10 +97,25 @@
     type: 'bar',
     data: { labels: monthLabels, datasets: [
       { label: 'Prilivi', data: monthIncome, backgroundColor: '#4ade80' },
-      { label: 'Odlivi', data: monthExpense, backgroundColor: '#f87171' }
+      { label: 'Odlivi', data: monthExpense, backgroundColor: '#f87171' },
+      { label: 'Saldo', data: monthSaldo, type: 'line', backgroundColor: '#38bdf8', borderColor: '#38bdf8', tension: 0.2 }
     ] },
     options: { scales: { y: { beginAtZero: true } } }
   });
+
+  {% if yoy %}
+  const yoyLabels = {{ yoy.month_labels|tojson }};
+  const yoyYears = {{ yoy.years|tojson }};
+  const yoyByYear = {{ yoy.expense_by_year|tojson }};
+  const yoyColors = ['#f87171', '#fb923c', '#facc15', '#a78bfa', '#38bdf8'];
+  new Chart(document.getElementById('yoyChart'), {
+    type: 'bar',
+    data: { labels: yoyLabels, datasets: yoyYears.map((y, i) => ({
+      label: String(y), data: yoyByYear[y], backgroundColor: yoyColors[i % yoyColors.length]
+    })) },
+    options: { scales: { y: { beginAtZero: true } } }
+  });
+  {% endif %}
 </script>
 {% endif %}
 {% endif %}

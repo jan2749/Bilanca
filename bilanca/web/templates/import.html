@@ -36,6 +36,38 @@
 <div class="card error"><strong>Napaka:</strong> {{ error }}</div>
 {% endif %}
 
+{% if batches %}
+<h2>Pretekli uvozi</h2>
+<table class="txns">
+  <thead>
+    <tr>
+      <th>Datoteka</th>
+      <th>Uvoženo</th>
+      <th>Obdobje</th>
+      <th class="num">Novih</th>
+      <th class="num">Dvojnikov</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in batches %}
+    <tr>
+      <td>{{ b.batch.filename or '—' }}</td>
+      <td>{{ b.batch.imported_at.strftime('%d.%m.%Y %H:%M') }}</td>
+      <td>{% if b.date_from and b.date_to %}{{ b.date_from.strftime('%d.%m.%Y') }} – {{ b.date_to.strftime('%d.%m.%Y') }}{% else %}—{% endif %}</td>
+      <td class="num">{{ b.batch.inserted_count }}</td>
+      <td class="num">{{ b.batch.duplicate_count }}</td>
+      <td>
+        <form method="post" action="/import/{{ b.batch.id }}/delete" onsubmit="return confirm('Izbrišem ta uvoz in vse {{ b.batch.inserted_count }} transakcij iz njega?');">
+          <button type="submit" class="secondary">Izbriši</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
 <script>
   const input = document.getElementById('file-input');
   const zone = document.getElementById('dropzone');
