@@ -23,7 +23,12 @@
     <li>Novih transakcij: <strong>{{ result.inserted_count }}</strong></li>
     <li>Preskočenih dvojnikov: {{ result.duplicate_count }}</li>
   </ul>
+  {% if uncat_merchants %}
+  <p class="muted">Še {{ uncat_txns }} nerazvrščenih transakcij pri {{ uncat_merchants }} prejemnikih.</p>
+  <a class="link-arrow" href="/categorize/suggestions">Razvrsti zdaj →</a>
+  {% else %}
   <a class="link-arrow" href="/transactions">Poglej transakcije →</a>
+  {% endif %}
 </div>
 {% endif %}
 

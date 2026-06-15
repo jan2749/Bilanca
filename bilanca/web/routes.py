@@ -21,6 +21,7 @@ from bilanca.auth import (
     verify_password,
 )
 from bilanca.categorize.rules import apply_rules, set_category
+from bilanca.categorize.suggest import uncategorized_groups
 from bilanca.config import TEMPLATES_DIR
 from bilanca.db import get_session
 from bilanca.ingest.csv_import import NkbmCsvSource
@@ -259,6 +260,37 @@ def recategorize(
     return RedirectResponse(url="/transactions", status_code=303)
 
 
+@router.get("/categorize/suggestions", response_class=HTMLResponse)
+def suggestions_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    groups = uncategorized_groups(session, user)
+    categories = session.exec(
+        select(Category).where(Category.kind == "expense").order_by(Category.name)
+    ).all()
+    return templates.TemplateResponse(
+        request,
+        "categorize_suggestions.html",
+        {"user": user, "groups": groups, "categories": categories},
+    )
+
+
+@router.post("/categorize/suggestions")
+def apply_suggestions(
+    txn_id: list[int] = Form(default=[]),
+    category_id: list[str] = Form(default=[]),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    # txn_id in category_id sta poravnana po vrstnem redu vrstic; prazne preskočimo.
+    for tid, cid in zip(txn_id, category_id):
+        if cid:
+            set_category(session, user, tid, int(cid), create_rule=True)
+    return RedirectResponse(url="/categorize/suggestions", status_code=303)
+
+
 @router.get("/subscriptions", response_class=HTMLResponse)
 def subscriptions(
     request: Request,
@@ -294,6 +326,9 @@ async def import_upload(
         source = NkbmCsvSource(raw)
         batch = import_source(session, source, user, filename=file.filename or "")
         ctx["result"] = batch
+        groups = uncategorized_groups(session, user)
+        ctx["uncat_merchants"] = len(groups)
+        ctx["uncat_txns"] = sum(g.count for g in groups)
     except NkbmParseError as exc:
         ctx["error"] = str(exc)
     except Exception as exc:  # noqa: BLE001 — uporabniku prijazno sporočilo namesto 500

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Razvrščanje · Bilanca{% endblock %}
+{% block content %}
+<h1>Razvrsti nerazvrščene</h1>
+
+{% if not groups %}
+<div class="card">Vse je razvrščeno. 🎉 <a class="link-arrow" href="/">Nazaj na pregled →</a></div>
+{% else %}
+<p class="muted">Izberi kategorijo za pogoste prejemnike. Ob potrditvi se ustvari pravilo, ki razvrsti
+  vse transakcije istega prejemnika (tudi prihodnje).</p>
+
+<form action="/categorize/suggestions" method="post">
+  <table class="txns">
+    <thead>
+      <tr><th>Prejemnik</th><th class="num">Skupaj</th><th class="num">Št.</th><th>Kategorija</th></tr>
+    </thead>
+    <tbody>
+      {% for g in groups %}
+      <tr>
+        <td>{{ g.label }}</td>
+        <td class="num neg">{{ '%.2f'|format(g.total_eur) }} €</td>
+        <td class="num">{{ g.count }}</td>
+        <td>
+          <input type="hidden" name="txn_id" value="{{ g.txn_id }}">
+          <select name="category_id">
+            <option value="">— pusti nerazvrščeno —</option>
+            {% for c in categories %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="submit">Shrani razvrstitve</button>
+</form>
+{% endif %}
+{% endblock %}
