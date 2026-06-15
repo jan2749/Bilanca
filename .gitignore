@@ -26,6 +26,9 @@ uploads/
 .env.*
 !.env.example
 
+# Claude Code lokalne nastavitve
+.claude/
+
 # IDE / OS
 .vscode/
 .idea/
