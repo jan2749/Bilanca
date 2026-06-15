@@ -6,10 +6,14 @@ prihodki pozitivni), da se izognemo napakam s plavajočo vejico.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 class CategoryKind(StrEnum):
@@ -46,7 +50,7 @@ class Account(SQLModel, table=True):
     currency: str = "EUR"
     # Začetni saldo (centi) za projekcijo konca meseca; NKBM izvoz salda ne vsebuje.
     opening_balance_cents: int = 0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class Category(SQLModel, table=True):
@@ -69,7 +73,7 @@ class Rule(SQLModel, table=True):
     category_id: int = Field(foreign_key="category.id")
     priority: int = 100
     source: RuleSource = RuleSource.SYSTEM
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ImportBatch(SQLModel, table=True):
@@ -78,7 +82,7 @@ class ImportBatch(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     source_type: str = "nkbm_csv"
     filename: str = ""
-    imported_at: datetime = Field(default_factory=datetime.utcnow)
+    imported_at: datetime = Field(default_factory=_utcnow)
     row_count: int = 0  # vrstic v datoteki
     inserted_count: int = 0  # novih vnesenih
     duplicate_count: int = 0  # preskočenih dvojnikov
@@ -114,4 +118,4 @@ class Transaction(SQLModel, table=True):
     # Zaporedna številka znotraj skupine identičnih transakcij istega dne (npr. dva enaka dviga).
     occurrence: int = 0
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)

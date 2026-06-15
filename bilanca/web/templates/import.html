@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Uvoz · Bilanca{% endblock %}
+{% block content %}
+<h1>Uvoz transakcij</h1>
+<p class="muted">Naloži izvoz prometa iz NKBM / OTP Bank@Net (CSV). Dvojniki se samodejno preskočijo.</p>
+
+<form id="upload-form" action="/import" method="post" enctype="multipart/form-data">
+  <label id="dropzone" for="file-input" class="dropzone">
+    <strong>Povleci datoteko sem</strong>
+    <span>ali klikni za izbiro (.csv)</span>
+    <span id="file-name" class="muted"></span>
+  </label>
+  <input id="file-input" type="file" name="file" accept=".csv,text/csv" hidden required>
+  <button type="submit">Uvozi</button>
+</form>
+
+{% if result %}
+<div class="card result">
+  <h2>Uvoz končan</h2>
+  <ul>
+    <li>Datoteka: <code>{{ result.filename }}</code></li>
+    <li>Vrstic v datoteki: {{ result.row_count }}</li>
+    <li>Novih transakcij: <strong>{{ result.inserted_count }}</strong></li>
+    <li>Preskočenih dvojnikov: {{ result.duplicate_count }}</li>
+  </ul>
+  <a href="/transactions">Poglej transakcije →</a>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="card error"><strong>Napaka:</strong> {{ error }}</div>
+{% endif %}
+
+<script>
+  const input = document.getElementById('file-input');
+  const zone = document.getElementById('dropzone');
+  const nameEl = document.getElementById('file-name');
+  function show() { nameEl.textContent = input.files.length ? input.files[0].name : ''; }
+  input.addEventListener('change', show);
+  ['dragover','dragenter'].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.add('over'); }));
+  ['dragleave','drop'].forEach(e => zone.addEventListener(e, ev => { ev.preventDefault(); zone.classList.remove('over'); }));
+  zone.addEventListener('drop', ev => { input.files = ev.dataTransfer.files; show(); });
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Pregled · Bilanca{% endblock %}
+{% block content %}
+<h1>Pregled</h1>
+{% if tx_count == 0 %}
+<div class="card">
+  <p>Dobrodošel v Bilanci. Za začetek naloži izvoz prometa iz svoje banke.</p>
+  <a href="/import">Uvozi transakcije →</a>
+</div>
+{% else %}
+<div class="cards">
+  <div class="card stat"><span class="muted">Transakcij</span><strong>{{ tx_count }}</strong></div>
+  <div class="card stat"><span class="muted">Prilivi</span><strong class="pos">{{ '%.2f'|format(income / 100) }} €</strong></div>
+  <div class="card stat"><span class="muted">Odlivi</span><strong class="neg">{{ '%.2f'|format(expense / 100) }} €</strong></div>
+</div>
+<p class="muted">Grafi porabe in trendov pridejo v naslednjem koraku.</p>
+{% endif %}
+{% endblock %}
