@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from bilanca.auth import AuthRedirect
 from bilanca.config import STATIC_DIR
 from bilanca.db import init_db
 from bilanca.web.routes import router
@@ -20,6 +22,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Bilanca", lifespan=lifespan)
+
+
+@app.exception_handler(AuthRedirect)
+async def _auth_redirect(request: Request, exc: AuthRedirect) -> RedirectResponse:
+    """Neprijavljen dostop → na prijavo."""
+    return RedirectResponse("/login", status_code=303)
+
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

@@ -9,6 +9,7 @@ from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.insights.trends import monthly_summary, spending_by_category
 from bilanca.seed import seed_categories
+from tests.conftest import make_user
 
 
 def _session() -> Session:
@@ -22,8 +23,9 @@ def _session() -> Session:
 
 def test_spending_by_category(nkbm_csv_bytes):
     with _session() as s:
-        import_source(s, NkbmCsvSource(nkbm_csv_bytes), "promet.csv")
-        slices = spending_by_category(s)
+        user = make_user(s)
+        import_source(s, NkbmCsvSource(nkbm_csv_bytes), user, "promet.csv")
+        slices = spending_by_category(s, user.id)
         # samo odhodki; padajoče urejeno
         assert slices
         amounts = [sl.amount_eur for sl in slices]
@@ -36,8 +38,9 @@ def test_spending_by_category(nkbm_csv_bytes):
 
 def test_monthly_summary(nkbm_csv_bytes):
     with _session() as s:
-        import_source(s, NkbmCsvSource(nkbm_csv_bytes), "promet.csv")
-        rows = monthly_summary(s)
+        user = make_user(s)
+        import_source(s, NkbmCsvSource(nkbm_csv_bytes), user, "promet.csv")
+        rows = monthly_summary(s, user.id)
         months = [r.month for r in rows]
         assert months == sorted(months)
         # priliv 78,35 € v juniju 2026

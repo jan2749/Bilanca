@@ -19,6 +19,8 @@ body {
   display: flex; align-items: center; gap: 2rem;
   padding: 1rem 2rem; background: var(--panel); border-bottom: 1px solid var(--border);
 }
+.topbar .logout { display: flex; align-items: center; gap: .75rem; margin: 0 0 0 auto; }
+.topbar .logout button { margin: 0; }
 .brand { font-weight: 700; font-size: 1.25rem; color: var(--accent); text-decoration: none; }
 nav a { color: var(--muted); text-decoration: none; margin-right: 1rem; }
 nav a:hover { color: var(--text); }
@@ -74,6 +76,17 @@ button.secondary { background: var(--panel); color: var(--text); border: 1px sol
   transition: gap .15s, filter .15s;
 }
 .link-arrow:hover { filter: brightness(1.15); gap: .55rem; }
+
+/* Prijavne / registracijske strani */
+.auth-card { max-width: 380px; margin: 3rem auto; }
+.auth-form { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+.auth-form label { display: flex; flex-direction: column; gap: .35rem; color: var(--muted); font-size: .9rem; }
+.auth-form input {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: .6rem .7rem; font-size: 1rem;
+}
+.auth-form input:focus { outline: none; border-color: var(--accent); }
+.auth-form button { margin-top: .25rem; }
 .alert-hike { border-color: #f59e0b; }
 .alert-hike h2 { margin: 0 0 .5rem; font-size: 1rem; color: #f59e0b; }
 .alert-hike ul { margin: .25rem 0; }

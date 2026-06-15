@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Registracija · Bilanca{% endblock %}
+{% block content %}
+<div class="auth-card card">
+  <h1>Registracija</h1>
+  {% if error %}<p class="neg">{{ error }}</p>{% endif %}
+  <form action="/register" method="post" class="auth-form">
+    <label>E-naslov
+      <input type="email" name="email" value="{{ email or '' }}" required autofocus>
+    </label>
+    <label>Geslo <span class="muted small">(vsaj 8 znakov)</span>
+      <input type="password" name="password" minlength="8" required>
+    </label>
+    <button type="submit">Ustvari račun</button>
+  </form>
+  <p class="muted small">Že imaš račun? <a class="link-arrow" href="/login">Prijava →</a></p>
+</div>
+{% endblock %}

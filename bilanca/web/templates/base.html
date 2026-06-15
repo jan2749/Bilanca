@@ -11,11 +11,17 @@
 <body>
   <header class="topbar">
     <a class="brand" href="/">Bilanca</a>
+    {% if user %}
     <nav>
       <a href="/">Pregled</a>
       <a href="/transactions">Transakcije</a>
       <a href="/import">Uvoz</a>
     </nav>
+    <form class="logout" action="/logout" method="post">
+      <span class="muted small">{{ user.email }}</span>
+      <button type="submit" class="secondary">Odjava</button>
+    </form>
+    {% endif %}
   </header>
   <main class="container">
     {% block content %}{% endblock %}

@@ -9,11 +9,31 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class User(SQLModel, table=True):
+    """Uporabnik aplikacije (prijava/registracija)."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    email: str = Field(index=True, unique=True)
+    password_hash: str
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class UserSession(SQLModel, table=True):
+    """Sejni žeton, shranjen v bazi; ujema se s piškotkom v brskalniku."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    token: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime
 
 
 class CategoryKind(StrEnum):
@@ -41,9 +61,10 @@ class RuleSource(StrEnum):
 
 
 class Account(SQLModel, table=True):
-    """Bančni račun."""
+    """Bančni račun (pripada uporabniku)."""
 
     id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
     name: str
     bank: str = "NKBM / OTP"
     iban: str = Field(index=True)
@@ -62,6 +83,8 @@ class Category(SQLModel, table=True):
     kind: CategoryKind = CategoryKind.EXPENSE
     color: str = "#9ca3af"  # za grafe
     is_system: bool = True
+    # NULL = sistemska (skupna vsem); sicer lastna kategorija uporabnika.
+    user_id: int | None = Field(default=None, foreign_key="user.id", index=True)
 
 
 class Rule(SQLModel, table=True):
@@ -73,6 +96,8 @@ class Rule(SQLModel, table=True):
     category_id: int = Field(foreign_key="category.id")
     priority: int = 100
     source: RuleSource = RuleSource.SYSTEM
+    # NULL = sistemsko (skupno vsem); sicer naučeno pravilo uporabnika.
+    user_id: int | None = Field(default=None, foreign_key="user.id", index=True)
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -80,6 +105,7 @@ class ImportBatch(SQLModel, table=True):
     """En uvoz datoteke (za sledljivost in statistiko)."""
 
     id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
     source_type: str = "nkbm_csv"
     filename: str = ""
     imported_at: datetime = Field(default_factory=_utcnow)
@@ -90,6 +116,10 @@ class ImportBatch(SQLModel, table=True):
 
 class Transaction(SQLModel, table=True):
     """Posamezna bančna transakcija (normalizirana)."""
+
+    # dedup_hash je unikaten znotraj računa (ne globalno): dva uporabnika imata lahko
+    # vsebinsko identično transakcijo, ki se ne sme zaleteti.
+    __table_args__ = (UniqueConstraint("account_id", "dedup_hash", name="uq_txn_account_dedup"),)
 
     id: int | None = Field(default=None, primary_key=True)
     account_id: int = Field(foreign_key="account.id", index=True)
@@ -114,7 +144,7 @@ class Transaction(SQLModel, table=True):
     import_batch_id: int | None = Field(default=None, foreign_key="importbatch.id")
 
     # Key za odkrivanje dvojnikov ob ponovnem uvozu prekrivajočih obdobij.
-    dedup_hash: str = Field(index=True, unique=True)
+    dedup_hash: str = Field(index=True)
     # Zaporedna številka znotraj skupine identičnih transakcij istega dne (npr. dva enaka dviga).
     occurrence: int = 0
 

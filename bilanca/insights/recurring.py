@@ -19,7 +19,7 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
-from bilanca.models import Transaction
+from bilanca.models import Account, Transaction
 
 MIN_OCCURRENCES = 2  # naročnina se pri mesečnem ritmu pokaže že v 2–3 mesecih
 
@@ -87,11 +87,17 @@ def _classify(median_gap: float) -> tuple[str, int] | None:
 
 def detect(
     session: Session,
+    user_id: int | None = None,
     min_occurrences: int = MIN_OCCURRENCES,
     as_of: date | None = None,
 ) -> RecurringReport:
-    """Zazna naročnine in podražitve iz transakcij v bazi."""
-    txns = list(session.exec(select(Transaction).where(Transaction.amount_cents < 0)).all())
+    """Zazna naročnine in podražitve. Če je podan user_id, le za tega uporabnika."""
+    query = select(Transaction).where(Transaction.amount_cents < 0)
+    if user_id is not None:
+        query = query.where(
+            Transaction.account_id.in_(select(Account.id).where(Account.user_id == user_id))
+        )
+    txns = list(session.exec(query).all())
     if not txns:
         return RecurringReport()
 

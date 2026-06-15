@@ -10,6 +10,7 @@ from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.models import Category, Transaction
 from bilanca.seed import seed_categories
+from tests.conftest import make_user
 
 
 def _session() -> Session:
@@ -29,7 +30,8 @@ def _cat_name(session: Session, txn: Transaction) -> str | None:
 
 def test_default_rules_categorize_on_import(nkbm_csv_bytes):
     with _session() as s:
-        import_source(s, NkbmCsvSource(nkbm_csv_bytes), "promet.csv")
+        user = make_user(s)
+        import_source(s, NkbmCsvSource(nkbm_csv_bytes), user, "promet.csv")
         by_purpose = {t.purpose: _cat_name(s, t) for t in s.exec(select(Transaction)).all()}
         assert by_purpose["APPLE.COM/BILL"] == "Naročnine"
         assert by_purpose["SPAR ŠENTJUR"] == "Hrana in pijača"
@@ -40,24 +42,26 @@ def test_default_rules_categorize_on_import(nkbm_csv_bytes):
 
 def test_manual_set_locks_and_survives_recategorize(nkbm_csv_bytes):
     with _session() as s:
-        import_source(s, NkbmCsvSource(nkbm_csv_bytes), "promet.csv")
+        user = make_user(s)
+        import_source(s, NkbmCsvSource(nkbm_csv_bytes), user, "promet.csv")
         spar = s.exec(select(Transaction).where(Transaction.purpose == "SPAR ŠENTJUR")).first()
         zabava = s.exec(select(Category).where(Category.name == "Zabava in prosti čas")).first()
 
-        set_category(s, spar.id, zabava.id, create_rule=False)
+        set_category(s, user, spar.id, zabava.id, create_rule=False)
         s.refresh(spar)
         assert spar.category_locked is True
         assert spar.category_id == zabava.id
 
         # ponovno razvrščanje ne sme prepisati ročno zaklenjene
-        apply_rules(s, only_uncategorized=False)
+        apply_rules(s, user, only_uncategorized=False)
         s.refresh(spar)
         assert spar.category_id == zabava.id
 
 
 def test_learn_rule_applies_to_others(nkbm_csv_bytes):
     with _session() as s:
-        import_source(s, NkbmCsvSource(nkbm_csv_bytes), "promet.csv")
+        user = make_user(s)
+        import_source(s, NkbmCsvSource(nkbm_csv_bytes), user, "promet.csv")
         # DVIG je privzeto Gotovina; prekvalificiraj enega in ustvari pravilo "za vse"
         dvigi = s.exec(
             select(Transaction).where(Transaction.purpose == "DVIG GOTOVINE BA02126S")
@@ -65,7 +69,7 @@ def test_learn_rule_applies_to_others(nkbm_csv_bytes):
         assert len(dvigi) == 2
         drugo = s.exec(select(Category).where(Category.name == "Drugo (odhodki)")).first()
 
-        set_category(s, dvigi[0].id, drugo.id, create_rule=True)
+        set_category(s, user, dvigi[0].id, drugo.id, create_rule=True)
         # drugi dvig (nezaklenjen) naj se prerazvrsti prek naučenega pravila
         for d in s.exec(
             select(Transaction).where(Transaction.purpose == "DVIG GOTOVINE BA02126S")

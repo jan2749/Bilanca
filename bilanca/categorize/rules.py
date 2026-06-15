@@ -8,12 +8,18 @@ from __future__ import annotations
 
 import re
 
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
-from bilanca.models import MatchType, Rule, RuleSource, Transaction
+from bilanca.models import Account, MatchType, Rule, RuleSource, Transaction, User
 
 # Naučena uporabniška pravila imajo visoko prioriteto, da prehitijo sistemska.
 USER_RULE_PRIORITY = 500
+
+
+def _user_account_ids(user: User):
+    """Podpoizvedba ID-jev uporabnikovih računov (za doseg transakcij)."""
+    return select(Account.id).where(Account.user_id == user.id)
 
 
 def _haystack(txn: Transaction) -> str:
@@ -37,10 +43,14 @@ def _matches(rule: Rule, txn: Transaction) -> bool:
     return False
 
 
-def load_rules(session: Session) -> list[Rule]:
-    """Naloži pravila, urejena po prioriteti (najprej najvišja)."""
+def load_rules(session: Session, user: User) -> list[Rule]:
+    """Naloži sistemska + uporabnikova pravila, urejena po prioriteti (najprej najvišja)."""
     return list(
-        session.exec(select(Rule).order_by(Rule.priority.desc(), Rule.id.asc())).all()
+        session.exec(
+            select(Rule)
+            .where(or_(Rule.user_id == None, Rule.user_id == user.id))  # noqa: E711
+            .order_by(Rule.priority.desc(), Rule.id.asc())
+        ).all()
     )
 
 
@@ -52,16 +62,19 @@ def categorize_one(txn: Transaction, rules: list[Rule]) -> int | None:
     return None
 
 
-def apply_rules(session: Session, only_uncategorized: bool = True) -> int:
-    """Kategorizira transakcije po pravilih. Zaklenjenih (ročnih) ne dira.
+def apply_rules(session: Session, user: User, only_uncategorized: bool = True) -> int:
+    """Kategorizira uporabnikove transakcije po pravilih. Zaklenjenih (ročnih) ne dira.
 
     Vrne število spremenjenih transakcij.
     """
-    rules = load_rules(session)
+    rules = load_rules(session, user)
     if not rules:
         return 0
 
-    query = select(Transaction).where(Transaction.category_locked == False)  # noqa: E712
+    query = select(Transaction).where(
+        Transaction.account_id.in_(_user_account_ids(user)),
+        Transaction.category_locked == False,  # noqa: E712
+    )
     if only_uncategorized:
         query = query.where(Transaction.category_id == None)  # noqa: E711
 
@@ -79,17 +92,24 @@ def apply_rules(session: Session, only_uncategorized: bool = True) -> int:
 
 def set_category(
     session: Session,
+    user: User,
     txn_id: int,
     category_id: int | None,
     create_rule: bool = False,
 ) -> int:
-    """Ročno nastavi kategorijo transakcije (in jo zakleni).
+    """Ročno nastavi kategorijo uporabnikove transakcije (in jo zakleni).
 
     Če create_rule=True, iz naziva nasprotne stranke (ali opisa) ustvari naučeno pravilo
     in ga uporabi na ostalih nezaklenjenih transakcijah. Vrne število dodatno spremenjenih.
     """
     txn = session.get(Transaction, txn_id)
     if txn is None:
+        return 0
+    # Preveri lastništvo (transakcija mora biti na enem od uporabnikovih računov).
+    owned = session.exec(
+        select(Account.id).where(Account.id == txn.account_id, Account.user_id == user.id)
+    ).first()
+    if owned is None:
         return 0
     txn.category_id = category_id
     txn.category_locked = True
@@ -100,7 +120,11 @@ def set_category(
         pattern = (txn.counterparty_name or txn.purpose or "").strip()
         if pattern:
             existing = session.exec(
-                select(Rule).where(Rule.pattern == pattern, Rule.source == RuleSource.USER)
+                select(Rule).where(
+                    Rule.pattern == pattern,
+                    Rule.source == RuleSource.USER,
+                    Rule.user_id == user.id,
+                )
             ).first()
             if existing:
                 existing.category_id = category_id
@@ -113,10 +137,11 @@ def set_category(
                         category_id=category_id,
                         priority=USER_RULE_PRIORITY,
                         source=RuleSource.USER,
+                        user_id=user.id,
                     )
                 )
             session.commit()
-            extra_changed = apply_rules(session, only_uncategorized=False)
+            extra_changed = apply_rules(session, user, only_uncategorized=False)
     else:
         session.commit()
     return extra_changed

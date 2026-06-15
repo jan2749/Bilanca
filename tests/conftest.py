@@ -3,6 +3,19 @@
 from __future__ import annotations
 
 import pytest
+from sqlmodel import Session
+
+from bilanca.auth import hash_password
+from bilanca.models import User
+
+
+def make_user(session: Session, email: str = "test@example.com", password: str = "geslo123") -> User:
+    """Ustvari in shrani uporabnika (za teste, ki potrebujejo doseg po uporabniku)."""
+    user = User(email=email, password_hash=hash_password(password))
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
 
 # Sintetičen NKBM/OTP izvoz (glava + reprezentativne vrstice), brez pravih podatkov.
 # Vključuje: priliv (DOBRO), odhodke (BREME), slovenske znake, končne presledke v opisu
