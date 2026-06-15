@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from bilanca.auth import (
@@ -122,18 +125,70 @@ def logout(request: Request, session: Session = Depends(get_session)):
 # ---------------------------------------------------------------- pregled / transakcije
 
 
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 @router.get("/", response_class=HTMLResponse)
 def index(
     request: Request,
+    od: str | None = None,
+    do: str | None = None,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
-    txns = session.exec(_user_txns_query(user)).all()
-    income = sum(t.amount_cents for t in txns if t.amount_cents > 0)
-    expense = sum(t.amount_cents for t in txns if t.amount_cents < 0)
+    # Celoten razpon razpoložljivih podatkov (za prikaz in meje vnosov).
+    bounds = session.exec(
+        select(func.min(Transaction.booking_date), func.max(Transaction.booking_date)).where(
+            Transaction.account_id.in_(select(Account.id).where(Account.user_id == user.id))
+        )
+    ).one()
+    data_from, data_to = bounds  # lahko (None, None), če ni transakcij
 
-    by_cat = spending_by_category(session, user.id)
-    months = monthly_summary(session, user.id)
+    date_from = _parse_date(od)
+    date_to = _parse_date(do)
+
+    query = _user_txns_query(user)
+    if date_from is not None:
+        query = query.where(Transaction.booking_date >= date_from)
+    if date_to is not None:
+        query = query.where(Transaction.booking_date <= date_to)
+    txns = session.exec(query).all()
+
+    income = sum(t.amount_cents for t in txns if t.amount_cents > 0)
+    expense = sum(t.amount_cents for t in txns if t.amount_cents < 0)  # negativen
+
+    by_cat = spending_by_category(session, user.id, date_from, date_to)
+    months = monthly_summary(session, user.id, date_from, date_to)
+
+    # Dodatne statistike (vse v izbranem obdobju).
+    avg_monthly_expense = (-expense / 100 / len(months)) if months else 0.0
+    savings_rate = ((income + expense) / income * 100) if income > 0 else None
+    expenses = [t for t in txns if t.amount_cents < 0]
+    biggest = min(expenses, key=lambda t: t.amount_cents, default=None)
+    biggest_expense = (
+        {
+            "amount_eur": -biggest.amount_cents / 100,
+            "label": (biggest.purpose or biggest.counterparty_name or "—").strip(),
+        }
+        if biggest is not None
+        else None
+    )
+    # Največji prejemnik po skupni porabi.
+    merchant_totals: dict[str, int] = {}
+    for t in expenses:
+        key = (t.counterparty_name or t.purpose or "—").strip()
+        merchant_totals[key] = merchant_totals.get(key, 0) + (-t.amount_cents)
+    top_merchant = None
+    if merchant_totals:
+        name, cents = max(merchant_totals.items(), key=lambda kv: kv[1])
+        top_merchant = {"name": name, "amount_eur": cents / 100}
+
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -142,6 +197,17 @@ def index(
             "tx_count": len(txns),
             "income": income,
             "expense": expense,
+            "od": od or "",
+            "do": do or "",
+            "data_from": data_from,
+            "data_to": data_to,
+            "period_from": date_from or data_from,
+            "period_to": date_to or data_to,
+            "is_filtered": bool(date_from or date_to),
+            "avg_monthly_expense": avg_monthly_expense,
+            "savings_rate": savings_rate,
+            "biggest_expense": biggest_expense,
+            "top_merchant": top_merchant,
             "cat_labels": [s.name for s in by_cat],
             "cat_values": [s.amount_eur for s in by_cat],
             "cat_colors": [s.color for s in by_cat],

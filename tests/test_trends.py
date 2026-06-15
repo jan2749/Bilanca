@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlmodel import Session, SQLModel, create_engine
 
 from bilanca.categorize.defaults import seed_rules
@@ -46,3 +48,18 @@ def test_monthly_summary(nkbm_csv_bytes):
         # priliv 78,35 € v juniju 2026
         jun = next(r for r in rows if r.month == "2026-06")
         assert jun.income_eur == 78.35
+
+
+def test_date_range_filters_out_of_window(nkbm_csv_bytes):
+    with _session() as s:
+        user = make_user(s)
+        import_source(s, NkbmCsvSource(nkbm_csv_bytes), user, "promet.csv")
+        # samo junij 2026 → aprilska dviga gotovine sta izključena
+        slices = spending_by_category(
+            s, user.id, date_from=date(2026, 6, 1), date_to=date(2026, 6, 30)
+        )
+        names = {sl.name for sl in slices}
+        assert "Gotovina (dvig)" not in names
+        # brez okna pa je gotovina prisotna (dva aprilska dviga)
+        all_names = {sl.name for sl in spending_by_category(s, user.id)}
+        assert "Gotovina (dvig)" in all_names

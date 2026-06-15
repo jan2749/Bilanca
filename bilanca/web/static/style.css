@@ -30,6 +30,16 @@ h1 { margin-top: 0; }
 .pos { color: var(--pos); }
 .neg { color: var(--neg); }
 
+.period-bar { flex-wrap: wrap; gap: .75rem; margin-top: .5rem; }
+.filter { display: flex; align-items: flex-end; gap: .6rem; flex-wrap: wrap; }
+.filter label { display: flex; flex-direction: column; gap: .2rem; }
+.filter input[type="date"] {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: .35rem .4rem; color-scheme: dark;
+}
+.filter input[type="date"]:focus { outline: none; border-color: var(--accent); }
+.filter button { margin: 0; }
+
 .cards { display: flex; gap: 1rem; flex-wrap: wrap; margin: 1.5rem 0; }
 .card {
   background: var(--panel); border: 1px solid var(--border);

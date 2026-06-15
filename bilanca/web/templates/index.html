@@ -2,17 +2,49 @@
 {% block title %}Pregled · Bilanca{% endblock %}
 {% block content %}
 <h1>Pregled</h1>
-{% if tx_count == 0 %}
+{% if not data_from %}
 <div class="card">
   <p>Dobrodošel v Bilanci. Za začetek naloži izvoz prometa iz svoje banke.</p>
   <a class="link-arrow" href="/import">Uvozi transakcije →</a>
 </div>
 {% else %}
+
+<div class="row-between period-bar">
+  <p class="muted">Obdobje: <strong>{{ period_from.strftime('%d.%m.%Y') }} – {{ period_to.strftime('%d.%m.%Y') }}</strong></p>
+  <form class="filter" method="get" action="/">
+    <label class="muted small">Od
+      <input type="date" name="od" value="{{ od }}" min="{{ data_from }}" max="{{ data_to }}">
+    </label>
+    <label class="muted small">Do
+      <input type="date" name="do" value="{{ do }}" min="{{ data_from }}" max="{{ data_to }}">
+    </label>
+    <button type="submit" class="secondary">Uporabi</button>
+    {% if is_filtered %}<a class="link-arrow" href="/">Ponastavi</a>{% endif %}
+  </form>
+</div>
+
+{% if tx_count == 0 %}
+<div class="card">V izbranem obdobju ni transakcij. <a class="link-arrow" href="/">Ponastavi obdobje →</a></div>
+{% else %}
 <div class="cards">
   <div class="card stat"><span class="muted">Transakcij</span><strong>{{ tx_count }}</strong></div>
   <div class="card stat"><span class="muted">Prilivi</span><strong class="pos">{{ '%.2f'|format(income / 100) }} €</strong></div>
-  <div class="card stat"><span class="muted">Odlivi</span><strong class="neg">{{ '%.2f'|format(expense / 100) }} €</strong></div>
+  <div class="card stat"><span class="muted">Odlivi</span><strong class="neg">{{ '%.2f'|format(-expense / 100) }} €</strong></div>
   <div class="card stat"><span class="muted">Razlika</span><strong class="{{ 'pos' if (income + expense) >= 0 else 'neg' }}">{{ '%.2f'|format((income + expense) / 100) }} €</strong></div>
+</div>
+
+<div class="cards">
+  <div class="card stat"><span class="muted">Povprečni mesečni odhodek</span><strong class="neg">{{ '%.2f'|format(avg_monthly_expense) }} €</strong></div>
+  <div class="card stat"><span class="muted">Stopnja varčevanja</span>
+    {% if savings_rate is none %}<strong class="muted">—</strong>
+    {% else %}<strong class="{{ 'pos' if savings_rate >= 0 else 'neg' }}">{{ '%.1f'|format(savings_rate) }} %</strong>{% endif %}
+  </div>
+  {% if biggest_expense %}
+  <div class="card stat"><span class="muted">Največji odhodek</span><strong class="neg">{{ '%.2f'|format(biggest_expense.amount_eur) }} €</strong><span class="muted small">{{ biggest_expense.label }}</span></div>
+  {% endif %}
+  {% if top_merchant %}
+  <div class="card stat"><span class="muted">Največji prejemnik</span><strong>{{ '%.2f'|format(top_merchant.amount_eur) }} €</strong><span class="muted small">{{ top_merchant.name }}</span></div>
+  {% endif %}
 </div>
 
 <div class="charts">
@@ -51,5 +83,6 @@
     options: { scales: { y: { beginAtZero: true } } }
   });
 </script>
+{% endif %}
 {% endif %}
 {% endblock %}
