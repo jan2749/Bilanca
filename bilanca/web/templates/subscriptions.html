@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Naročnine · Bilanca{% endblock %}
+{% block content %}
+<h1>Naročnine in ponavljajoči stroški</h1>
+
+{% if report.price_hikes %}
+<div class="card alert-hike">
+  <h2>⚠ Tihe podražitve</h2>
+  <ul>
+    {% for h in report.price_hikes %}
+    <li><strong>{{ h.label }}</strong>: {{ '%.2f'|format(h.old_eur) }} € → {{ '%.2f'|format(h.new_eur) }} €
+        (+{{ h.pct }} %, okoli {{ h.changed_around.strftime('%d.%m.%Y') }})</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if not report.subscriptions %}
+<div class="card">Zaenkrat ni zaznanih ponavljajočih bremenitev. Z več meseci zgodovine bo zaznava boljša.</div>
+{% else %}
+<div class="cards">
+  <div class="card stat"><span class="muted">Aktivnih naročnin</span><strong>{{ report.active|length }}</strong></div>
+  <div class="card stat"><span class="muted">Ocenjen mesečni strošek</span><strong class="neg">{{ '%.2f'|format(report.monthly_cost_eur) }} €</strong></div>
+</div>
+
+<table class="txns">
+  <thead>
+    <tr><th>Prejemnik</th><th class="num">Znesek</th><th>Ritem</th><th>Zadnjič</th><th>Naslednjič</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for s in report.subscriptions %}
+    <tr class="{{ '' if s.is_active else 'muted' }}">
+      <td>{{ s.label }}</td>
+      <td class="num neg">{{ '%.2f'|format(s.amount_eur) }} €</td>
+      <td>{{ s.period_label }} <span class="muted small">×{{ s.count }}</span></td>
+      <td>{{ s.last_date.strftime('%d.%m.%Y') }}</td>
+      <td>{{ s.next_expected.strftime('%d.%m.%Y') }}</td>
+      <td>{% if s.is_active %}<span class="pos">aktivna</span>{% else %}<span class="muted">morda preklicana</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted small">Namig: naročnino, ki je ne prepoznaš ali je ne uporabljaš več, je morda čas preklicati.</p>
+{% endif %}
+{% endblock %}

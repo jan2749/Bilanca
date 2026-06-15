@@ -13,6 +13,7 @@ from bilanca.db import get_session
 from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
+from bilanca.insights.recurring import detect as detect_recurring
 from bilanca.insights.trends import monthly_summary, spending_by_category
 from bilanca.models import Account, Category, Transaction
 
@@ -28,6 +29,7 @@ def index(request: Request, session: Session = Depends(get_session)):
 
     by_cat = spending_by_category(session)
     months = monthly_summary(session)
+    report = detect_recurring(session)
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -41,6 +43,9 @@ def index(request: Request, session: Session = Depends(get_session)):
             "month_labels": [m.month for m in months],
             "month_income": [m.income_eur for m in months],
             "month_expense": [m.expense_eur for m in months],
+            "sub_count": len(report.active),
+            "sub_monthly": report.monthly_cost_eur,
+            "price_hikes": report.price_hikes,
         },
     )
 
@@ -74,6 +79,16 @@ def categorize_txn(
 def recategorize(session: Session = Depends(get_session)):
     apply_rules(session, only_uncategorized=True)
     return RedirectResponse(url="/transactions", status_code=303)
+
+
+@router.get("/subscriptions", response_class=HTMLResponse)
+def subscriptions(request: Request, session: Session = Depends(get_session)):
+    report = detect_recurring(session)
+    return templates.TemplateResponse(
+        request,
+        "subscriptions.html",
+        {"report": report},
+    )
 
 
 @router.get("/import", response_class=HTMLResponse)

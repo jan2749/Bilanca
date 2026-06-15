@@ -64,3 +64,8 @@ button.secondary { background: var(--panel); color: var(--text); border: 1px sol
 @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
 .chart-card h2 { font-size: 1rem; margin: 0 0 1rem; }
 .chart-card canvas { max-height: 320px; }
+.card.stat.link { text-decoration: none; color: var(--text); }
+.card.stat.link:hover { border-color: var(--accent); }
+.alert-hike { border-color: #f59e0b; }
+.alert-hike h2 { margin: 0 0 .5rem; font-size: 1rem; color: #f59e0b; }
+.alert-hike ul { margin: .25rem 0; }
