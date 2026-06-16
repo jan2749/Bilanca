@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -28,7 +28,12 @@ from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
 from bilanca.insights.recurring import detect as detect_recurring
-from bilanca.insights.stats import monthly_by_category, stats_summary, top_merchants
+from bilanca.insights.stats import (
+    period_series,
+    spending_by_weekday,
+    stats_summary,
+    top_merchants,
+)
 from bilanca.insights.trends import (
     coverage_gaps,
     monthly_summary,
@@ -342,11 +347,21 @@ def subscriptions(
 # ---------------------------------------------------------------- statistika
 
 
+_GRAN_OPTIONS = [
+    ("auto", "Samodejno"),
+    ("week", "Teden"),
+    ("month", "Mesec"),
+    ("quarter", "Četrtletje"),
+    ("year", "Leto"),
+]
+
+
 @router.get("/stats", response_class=HTMLResponse)
 def stats_page(
     request: Request,
     od: str | None = None,
     do: str | None = None,
+    gran: str | None = None,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
@@ -362,32 +377,54 @@ def stats_page(
     period_from = date_from or data_from
     period_to = date_to or data_to
 
-    granularity = "month"
+    span_months = 0
     if period_from and period_to:
         span_months = (
             (period_to.year - period_from.year) * 12
             + (period_to.month - period_from.month)
             + 1
         )
-        if span_months > 24:
+
+    # Granularnost: uporabnikova izbira, sicer samodejno glede na dolžino obdobja.
+    gran = (gran or "auto").lower()
+    if gran not in {"auto", "week", "month", "quarter", "year"}:
+        gran = "auto"
+    if gran == "auto":
+        if span_months > 36:
             granularity = "year"
+        elif span_months > 18:
+            granularity = "quarter"
+        elif span_months <= 4:
+            granularity = "week"
+        else:
+            granularity = "month"
+    else:
+        granularity = gran
 
-    months = monthly_summary(session, user.id, date_from, date_to, granularity=granularity)
-    summary = stats_summary(months)
+    # Kartice vedno na mesečnih točkah → stabilne, smiselne vrednosti.
+    monthly_points = period_series(session, user.id, date_from, date_to, "month")
+    summary = stats_summary(monthly_points)
 
-    by_cat = spending_by_category(session, user.id, date_from, date_to)
-    total_expense_eur = sum(s.amount_eur for s in by_cat)
-
-    cat_trend = monthly_by_category(session, user.id, date_from, date_to, granularity=granularity)
-
-    merchants = top_merchants(session, user.id, date_from, date_to)
-
-    # Kumulativni saldo (relativno na uvožene podatke).
+    # Grafi v izbrani granularnosti.
+    points = period_series(session, user.id, date_from, date_to, granularity)
     cumulative: list[float] = []
     running = 0.0
-    for m in months:
-        running += m.income_eur - m.expense_eur
+    for p in points:
+        running += p.net_eur
         cumulative.append(round(running, 2))
+
+    weekday_labels, weekday_values = spending_by_weekday(
+        session, user.id, period_from, period_to, date_from, date_to
+    )
+    merchants = top_merchants(session, user.id, date_from, date_to)
+
+    # Hitre časovne predloge, sidrane na zadnji uvožen datum.
+    presets = []
+    if data_to:
+        for label, days in [("30 dni", 30), ("3 mesece", 90), ("6 mesecev", 180), ("1 leto", 365)]:
+            start = max(data_from, data_to - timedelta(days=days)) if data_from else data_to - timedelta(days=days)
+            presets.append({"label": label, "od": start.isoformat(), "do": data_to.isoformat()})
+        presets.append({"label": "Vse", "od": "", "do": ""})
 
     return templates.TemplateResponse(
         request,
@@ -400,17 +437,24 @@ def stats_page(
             "period_to": period_to,
             "od": od or "",
             "do": do or "",
-            "is_filtered": bool(date_from or date_to),
+            "gran": gran,
             "granularity": granularity,
+            "gran_options": _GRAN_OPTIONS,
+            "presets": presets,
+            "is_filtered": bool(date_from or date_to),
             "summary": summary,
-            "by_cat": by_cat,
-            "total_expense_eur": total_expense_eur,
-            "cat_trend": cat_trend,
             "merchants": merchants,
-            "month_labels": [m.month for m in months],
-            "month_income": [m.income_eur for m in months],
-            "month_expense": [m.expense_eur for m in months],
-            "cumulative": cumulative,
+            "chart_labels": [p.label for p in points],
+            "chart_income": [p.income_eur for p in points],
+            "chart_expense": [p.expense_eur for p in points],
+            "chart_net": [p.net_eur for p in points],
+            "chart_savings": [p.savings_rate for p in points],
+            "chart_cumulative": cumulative,
+            "weekday_labels": weekday_labels,
+            "weekday_values": weekday_values,
+            "merchant_names": [m.name for m in merchants],
+            "merchant_values": [m.total_eur for m in merchants],
+            "merchant_counts": [m.tx_count for m in merchants],
         },
     )
 

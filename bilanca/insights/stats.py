@@ -1,30 +1,89 @@
-"""Podrobna statistika za /stats stran: razčlenitev po kategorijah, trendi, prejemniki."""
+"""Podrobna statistika za /stats stran.
+
+Brez razčlenitve po kategorijah — fokus na denarnih tokovih skozi čas, vzorcih porabe
+in prejemnikih. Vse agregacije podpirajo poljubno datumsko okno in granularnost
+(teden / mesec / četrtletje / leto), da si uporabnik podatke pogleda kakor želi.
+"""
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from bilanca.insights.trends import UNCATEGORIZED_COLOR, _scoped_txns
-from bilanca.models import Category, Transaction
-from bilanca.seed import UNCATEGORIZED_NAME
+from bilanca.insights.trends import _scoped_txns
+from bilanca.models import Transaction
+
+SLO_MONTH_ABBR = [
+    "jan", "feb", "mar", "apr", "maj", "jun",
+    "jul", "avg", "sep", "okt", "nov", "dec",
+]
+SLO_WEEKDAYS = ["Pon", "Tor", "Sre", "Čet", "Pet", "Sob", "Ned"]
+
+
+def _period_key_label(d: date, granularity: str) -> tuple[str, str]:
+    """Vrne (sortirni ključ, prikazna oznaka) za dan glede na granularnost."""
+    if granularity == "week":
+        iso = d.isocalendar()
+        return f"{iso[0]}-W{iso[1]:02d}", f"T{iso[1]:02d} {iso[0]}"
+    if granularity == "quarter":
+        q = (d.month - 1) // 3 + 1
+        return f"{d.year}-Q{q}", f"Q{q} {d.year}"
+    if granularity == "year":
+        return f"{d.year}", f"{d.year}"
+    # mesec (privzeto)
+    return f"{d.year}-{d.month:02d}", f"{SLO_MONTH_ABBR[d.month - 1]} {d.year}"
 
 
 @dataclass
-class MerchantRow:
-    name: str
-    total_eur: float
-    tx_count: int
-    pct: float  # delež celotnih odhodkov (0–100)
+class PeriodPoint:
+    key: str
+    label: str
+    income_eur: float
+    expense_eur: float
+    net_eur: float
+    savings_rate: float | None  # delež prihrankov glede na prihodke (%), None če ni prihodkov
 
 
-@dataclass
-class CategoryTrend:
-    period_labels: list[str]  # "YYYY-MM" ali "YYYY"
-    datasets: list[dict]      # [{label, color, data: [eur, ...]}, ...]
+def period_series(
+    session: Session,
+    user_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    granularity: str = "month",
+) -> list[PeriodPoint]:
+    """Prihodki, odhodki, neto in stopnja varčevanja po obdobjih, naraščajoče po času."""
+    income: dict[str, int] = defaultdict(int)
+    expense: dict[str, int] = defaultdict(int)
+    labels: dict[str, str] = {}
+
+    for t in session.exec(_scoped_txns(user_id, date_from, date_to)).all():
+        key, label = _period_key_label(t.booking_date, granularity)
+        labels[key] = label
+        if t.amount_cents >= 0:
+            income[key] += t.amount_cents
+        else:
+            expense[key] += -t.amount_cents
+
+    points: list[PeriodPoint] = []
+    for key in sorted(set(income) | set(expense)):
+        inc = income[key] / 100
+        exp = expense[key] / 100
+        net = round(inc - exp, 2)
+        savings_rate = round((inc - exp) / inc * 100, 1) if inc > 0 else None
+        points.append(
+            PeriodPoint(
+                key=key,
+                label=labels[key],
+                income_eur=round(inc, 2),
+                expense_eur=round(exp, 2),
+                net_eur=net,
+                savings_rate=savings_rate,
+            )
+        )
+    return points
 
 
 @dataclass
@@ -32,10 +91,76 @@ class StatsSummary:
     months_count: int
     avg_income_eur: float
     avg_expense_eur: float
-    best_month: str | None      # oznaka obdobja
+    total_income_eur: float
+    total_expense_eur: float
+    best_month: str | None
     best_month_net: float
     worst_month: str | None
     worst_month_net: float
+
+
+def stats_summary(monthly_points: list[PeriodPoint]) -> StatsSummary:
+    """Povzetek za stat kartice. Vedno računan na MESEČNIH točkah (stabilne kartice)."""
+    if not monthly_points:
+        return StatsSummary(0, 0.0, 0.0, 0.0, 0.0, None, 0.0, None, 0.0)
+
+    n = len(monthly_points)
+    total_inc = round(sum(p.income_eur for p in monthly_points), 2)
+    total_exp = round(sum(p.expense_eur for p in monthly_points), 2)
+    best = max(monthly_points, key=lambda p: p.net_eur)
+    worst = min(monthly_points, key=lambda p: p.net_eur)
+
+    return StatsSummary(
+        months_count=n,
+        avg_income_eur=round(total_inc / n, 2),
+        avg_expense_eur=round(total_exp / n, 2),
+        total_income_eur=total_inc,
+        total_expense_eur=total_exp,
+        best_month=best.label,
+        best_month_net=best.net_eur,
+        worst_month=worst.label,
+        worst_month_net=worst.net_eur,
+    )
+
+
+def spending_by_weekday(
+    session: Session,
+    user_id: int,
+    period_from: date | None,
+    period_to: date | None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> tuple[list[str], list[float]]:
+    """Povprečna poraba (€) po dnevih v tednu — pokaže, kdaj uporabnik največ zapravlja.
+
+    Povprečimo z dejanskim številom pojavitev posameznega dneva v obdobju, da daljši
+    meseci/leta ne popačijo rezultata.
+    """
+    if period_from is None or period_to is None:
+        return SLO_WEEKDAYS, [0.0] * 7
+
+    totals = [0] * 7
+    query = _scoped_txns(user_id, date_from, date_to).where(Transaction.amount_cents < 0)
+    for t in session.exec(query).all():
+        totals[t.booking_date.weekday()] += -t.amount_cents
+
+    counts = [0] * 7
+    d = period_from
+    while d <= period_to:
+        counts[d.weekday()] += 1
+        d += timedelta(days=1)
+
+    avg = [
+        round(totals[i] / 100 / counts[i], 2) if counts[i] else 0.0 for i in range(7)
+    ]
+    return SLO_WEEKDAYS, avg
+
+
+@dataclass
+class MerchantRow:
+    name: str
+    total_eur: float
+    tx_count: int
 
 
 def top_merchants(
@@ -48,106 +173,15 @@ def top_merchants(
     """Top `limit` prejemnikov po skupni vrednosti odhodkov, padajoče."""
     totals: dict[str, int] = defaultdict(int)
     counts: dict[str, int] = defaultdict(int)
-    total_expense = 0
 
     query = _scoped_txns(user_id, date_from, date_to).where(Transaction.amount_cents < 0)
     for t in session.exec(query).all():
         name = (t.counterparty_name or t.purpose or "—").strip()
         totals[name] += -t.amount_cents
         counts[name] += 1
-        total_expense += -t.amount_cents
 
     top = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:limit]
     return [
-        MerchantRow(
-            name=name,
-            total_eur=round(cents / 100, 2),
-            tx_count=counts[name],
-            pct=round(cents / total_expense * 100, 1) if total_expense > 0 else 0.0,
-        )
+        MerchantRow(name=name, total_eur=round(cents / 100, 2), tx_count=counts[name])
         for name, cents in top
     ]
-
-
-def monthly_by_category(
-    session: Session,
-    user_id: int,
-    date_from: date | None = None,
-    date_to: date | None = None,
-    granularity: str = "month",
-    top_n: int = 7,
-) -> CategoryTrend:
-    """Odhodki po kategorijah in obdobjih za zloženi stolpčni graf.
-
-    Vrne top `top_n` kategorij po skupni porabi; preostanek združi v 'Ostalo'.
-    """
-    fmt = "%Y" if granularity == "year" else "%Y-%m"
-    cats = {c.id: c for c in session.exec(select(Category)).all()}
-
-    period_totals: dict[tuple[str, int | None], int] = defaultdict(int)
-    all_periods: set[str] = set()
-
-    query = _scoped_txns(user_id, date_from, date_to).where(Transaction.amount_cents < 0)
-    for t in session.exec(query).all():
-        period = t.booking_date.strftime(fmt)
-        all_periods.add(period)
-        period_totals[(period, t.category_id)] += -t.amount_cents
-
-    periods = sorted(all_periods)
-
-    # Skupna poraba po kategoriji (za razvrščanje).
-    cat_totals: dict[int | None, int] = defaultdict(int)
-    for (_, cat_id), amt in period_totals.items():
-        cat_totals[cat_id] += amt
-
-    top_pairs = sorted(cat_totals.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
-    top_cat_ids = {cat_id for cat_id, _ in top_pairs}
-    has_other = len(cat_totals) > top_n
-
-    datasets: list[dict] = []
-    for cat_id, _ in top_pairs:
-        if cat_id is None:
-            name, color = UNCATEGORIZED_NAME, UNCATEGORIZED_COLOR
-        else:
-            cat = cats.get(cat_id)
-            name = cat.name if cat else UNCATEGORIZED_NAME
-            color = (cat.color if cat else None) or UNCATEGORIZED_COLOR
-        data = [round(period_totals.get((p, cat_id), 0) / 100, 2) for p in periods]
-        datasets.append({"label": name, "color": color, "data": data})
-
-    if has_other:
-        other_by_period: dict[str, int] = defaultdict(int)
-        for (period, cat_id), amt in period_totals.items():
-            if cat_id not in top_cat_ids:
-                other_by_period[period] += amt
-        datasets.append({
-            "label": "Ostalo",
-            "color": "#6b7280",
-            "data": [round(other_by_period.get(p, 0) / 100, 2) for p in periods],
-        })
-
-    return CategoryTrend(period_labels=periods, datasets=datasets)
-
-
-def stats_summary(monthly_rows: list) -> StatsSummary:
-    """Povzetek za stat kartice iz že izračunanih mesečnih vrstic (MonthRow)."""
-    if not monthly_rows:
-        return StatsSummary(0, 0.0, 0.0, None, 0.0, None, 0.0)
-
-    n = len(monthly_rows)
-    avg_inc = round(sum(r.income_eur for r in monthly_rows) / n, 2)
-    avg_exp = round(sum(r.expense_eur for r in monthly_rows) / n, 2)
-
-    nets = [(r.month, round(r.income_eur - r.expense_eur, 2)) for r in monthly_rows]
-    best = max(nets, key=lambda x: x[1])
-    worst = min(nets, key=lambda x: x[1])
-
-    return StatsSummary(
-        months_count=n,
-        avg_income_eur=avg_inc,
-        avg_expense_eur=avg_exp,
-        best_month=best[0],
-        best_month_net=best[1],
-        worst_month=worst[0],
-        worst_month_net=worst[1],
-    )
