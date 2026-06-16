@@ -100,3 +100,23 @@ button.secondary { background: var(--panel); color: var(--text); border: 1px sol
 .alert-hike { border-color: #f59e0b; }
 .alert-hike h2 { margin: 0 0 .5rem; font-size: 1rem; color: #f59e0b; }
 .alert-hike ul { margin: .25rem 0; }
+
+/* Statistika */
+.chart-wide { margin: 1rem 0; }
+.chart-wide canvas { max-height: 380px; }
+.chart-title { font-size: 1rem; margin: 0 0 1rem; }
+
+/* Razčlenitev: donut levo, tabela desno */
+.breakdown-inner { display: grid; grid-template-columns: 180px 1fr; gap: 1.25rem; align-items: start; }
+.breakdown-inner canvas { width: 100% !important; height: auto !important; max-height: 180px; }
+.breakdown-table { font-size: .85rem; }
+.breakdown-table td, .breakdown-table th { padding: .35rem .4rem; }
+@media (max-width: 640px) { .breakdown-inner { grid-template-columns: 1fr; } }
+
+/* Pika barve kategorije */
+.cat-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: .4rem; vertical-align: middle; flex-shrink: 0; }
+
+/* Odstotkovna palica v tabeli prejemnikov */
+.pct-bar { display: flex; align-items: center; gap: .5rem; min-width: 120px; }
+.pct-fill { height: 6px; background: var(--neg); border-radius: 3px; flex-shrink: 0; min-width: 2px; }
+.pct-bar span { font-size: .8rem; color: var(--muted); white-space: nowrap; }

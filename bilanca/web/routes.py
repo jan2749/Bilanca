@@ -28,6 +28,7 @@ from bilanca.ingest.csv_import import NkbmCsvSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
 from bilanca.insights.recurring import detect as detect_recurring
+from bilanca.insights.stats import monthly_by_category, stats_summary, top_merchants
 from bilanca.insights.trends import (
     coverage_gaps,
     monthly_summary,
@@ -335,6 +336,82 @@ def subscriptions(
         request,
         "subscriptions.html",
         {"user": user, "report": report},
+    )
+
+
+# ---------------------------------------------------------------- statistika
+
+
+@router.get("/stats", response_class=HTMLResponse)
+def stats_page(
+    request: Request,
+    od: str | None = None,
+    do: str | None = None,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    bounds = session.exec(
+        select(func.min(Transaction.booking_date), func.max(Transaction.booking_date)).where(
+            Transaction.account_id.in_(select(Account.id).where(Account.user_id == user.id))
+        )
+    ).one()
+    data_from, data_to = bounds
+
+    date_from = _parse_date(od)
+    date_to = _parse_date(do)
+    period_from = date_from or data_from
+    period_to = date_to or data_to
+
+    granularity = "month"
+    if period_from and period_to:
+        span_months = (
+            (period_to.year - period_from.year) * 12
+            + (period_to.month - period_from.month)
+            + 1
+        )
+        if span_months > 24:
+            granularity = "year"
+
+    months = monthly_summary(session, user.id, date_from, date_to, granularity=granularity)
+    summary = stats_summary(months)
+
+    by_cat = spending_by_category(session, user.id, date_from, date_to)
+    total_expense_eur = sum(s.amount_eur for s in by_cat)
+
+    cat_trend = monthly_by_category(session, user.id, date_from, date_to, granularity=granularity)
+
+    merchants = top_merchants(session, user.id, date_from, date_to)
+
+    # Kumulativni saldo (relativno na uvožene podatke).
+    cumulative: list[float] = []
+    running = 0.0
+    for m in months:
+        running += m.income_eur - m.expense_eur
+        cumulative.append(round(running, 2))
+
+    return templates.TemplateResponse(
+        request,
+        "stats.html",
+        {
+            "user": user,
+            "data_from": data_from,
+            "data_to": data_to,
+            "period_from": period_from,
+            "period_to": period_to,
+            "od": od or "",
+            "do": do or "",
+            "is_filtered": bool(date_from or date_to),
+            "granularity": granularity,
+            "summary": summary,
+            "by_cat": by_cat,
+            "total_expense_eur": total_expense_eur,
+            "cat_trend": cat_trend,
+            "merchants": merchants,
+            "month_labels": [m.month for m in months],
+            "month_income": [m.income_eur for m in months],
+            "month_expense": [m.expense_eur for m in months],
+            "cumulative": cumulative,
+        },
     )
 
 
