@@ -15,10 +15,13 @@
 {% else %}
 
 <div class="txn-tools">
-  <input type="search" id="txn-search" class="txn-search" placeholder="Išči po opisu, prejemniku, znesku, datumu…" autocomplete="off">
-  <div class="filter txn-range">
-    <label>Od<input type="date" id="txn-from"></label>
-    <label>Do<input type="date" id="txn-to"></label>
+  <input type="search" id="txn-search" class="txn-search" placeholder="Išči po opisu, prejemniku, znesku ali datumu…" autocomplete="off">
+  <div class="txn-range">
+    <div class="dates">
+      <label>Od <input type="date" id="txn-from"></label>
+      <label>Do <input type="date" id="txn-to"></label>
+    </div>
+    <span class="sep"></span>
     <div class="presets">
       <button type="button" class="chip" data-range="month">Ta mesec</button>
       <button type="button" class="chip" data-range="90">Zadnji 3 mes.</button>
@@ -155,11 +158,18 @@
     }
   }
 
+  const chips = document.querySelectorAll(".presets .chip");
+  function clearActive() {
+    for (const c of chips) c.classList.remove("active");
+  }
+
   search.addEventListener("input", refilter);
-  fromI.addEventListener("change", refilter);
-  toI.addEventListener("change", refilter);
-  for (const chip of document.querySelectorAll(".presets .chip")) {
+  fromI.addEventListener("change", () => { clearActive(); refilter(); });
+  toI.addEventListener("change", () => { clearActive(); refilter(); });
+  for (const chip of chips) {
     chip.addEventListener("click", () => {
+      clearActive();
+      chip.classList.add("active");
       setRange(chip.dataset.range);
       refilter();
     });
