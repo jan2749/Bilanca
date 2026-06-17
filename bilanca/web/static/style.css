@@ -63,6 +63,16 @@ button {
 }
 button:hover { filter: brightness(1.08); }
 
+.txn-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem; margin: 1rem 0 .25rem; }
+.txn-search {
+  flex: 1; min-width: 240px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: .55rem .75rem; font-size: .95rem;
+}
+.txn-search:focus { outline: none; border-color: var(--accent); }
+.txn-range { align-items: flex-end; }
+.txn-more { margin: 1rem 0; text-align: center; }
+.empty-hint { margin: 1rem 0; }
+
 table.txns { width: 100%; border-collapse: collapse; }
 table.txns th, table.txns td { padding: .55rem .5rem; border-bottom: 1px solid var(--border); text-align: left; }
 table.txns th { color: var(--muted); font-weight: 600; }

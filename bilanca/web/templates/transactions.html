@@ -9,40 +9,168 @@
   </form>
   {% endif %}
 </div>
-<p class="muted">{{ transactions|length }} transakcij{% if account %} · račun {{ account.iban }}{% endif %}</p>
 
 {% if not transactions %}
 <div class="card">Ni transakcij. <a class="link-arrow" href="/import">Uvozi izvoz prometa →</a></div>
 {% else %}
+
+<div class="txn-tools">
+  <input type="search" id="txn-search" class="txn-search" placeholder="Išči po opisu, prejemniku, znesku, datumu…" autocomplete="off">
+  <div class="filter txn-range">
+    <label>Od<input type="date" id="txn-from"></label>
+    <label>Do<input type="date" id="txn-to"></label>
+    <div class="presets">
+      <button type="button" class="chip" data-range="month">Ta mesec</button>
+      <button type="button" class="chip" data-range="90">Zadnji 3 mes.</button>
+      <button type="button" class="chip" data-range="year">Letos</button>
+      <button type="button" class="chip" data-range="all">Vse</button>
+    </div>
+  </div>
+</div>
+
+<p class="muted" id="txn-count"></p>
+
 <table class="txns">
   <thead>
     <tr><th>Datum</th><th>Opis</th><th class="num">Znesek</th><th>Kategorija</th></tr>
   </thead>
-  <tbody>
-    {% for t in transactions %}
-    <tr>
-      <td>{{ t.booking_date.strftime('%d.%m.%Y') }}</td>
-      <td>{{ t.purpose }}{% if t.counterparty_name and t.counterparty_name != t.purpose %}
-            <div class="muted small">{{ t.counterparty_name }}</div>{% endif %}</td>
-      <td class="num {{ 'pos' if t.amount_cents > 0 else 'neg' }}">
-        {{ '%.2f'|format(t.amount_cents / 100) }} €
-      </td>
-      <td>
-        <form action="/transactions/{{ t.id }}/categorize" method="post" class="cat-form">
-          <select name="category_id" onchange="this.form.submit()">
-            <option value="">— Nerazvrščeno —</option>
-            {% for c in categories %}
-            <option value="{{ c.id }}" {{ 'selected' if c.id == t.category_id else '' }}>{{ c.name }}</option>
-            {% endfor %}
-          </select>
-          <label class="rule-check" title="Ustvari pravilo za vse od tega prejemnika">
-            <input type="checkbox" name="create_rule" value="true"> za vse
-          </label>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
+  <tbody id="txn-body"></tbody>
 </table>
+
+<p class="empty-hint muted" id="txn-empty" hidden>Ni zadetkov za izbrane pogoje.</p>
+
+<div class="txn-more" id="txn-more" hidden>
+  <button type="button" class="secondary" id="txn-more-btn">Pokaži več</button>
+</div>
+
+<script id="txn-data" type="application/json">{{ txns_json|tojson }}</script>
+<script id="cat-data" type="application/json">{{ cats_json|tojson }}</script>
+<script>
+(function () {
+  const PAGE = 50;
+  const TXNS = JSON.parse(document.getElementById("txn-data").textContent);
+  const CATS = JSON.parse(document.getElementById("cat-data").textContent);
+
+  // Precompute lowercase haystack + euro label per transaction.
+  for (const t of TXNS) {
+    t.amountLabel = (t.cents / 100).toFixed(2).replace(".", ",") + " €";
+    t.hay = (t.dateLabel + " " + t.date + " " + t.desc + " " + t.cp + " " + t.amountLabel).toLowerCase();
+  }
+
+  const esc = (s) => s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // Category <option> list, built once; selected attr injected per row.
+  const optsFor = (catId) => {
+    let html = '<option value="">— Nerazvrščeno —</option>';
+    for (const c of CATS) {
+      const sel = c.id === catId ? " selected" : "";
+      html += '<option value="' + c.id + '"' + sel + ">" + esc(c.name) + "</option>";
+    }
+    return html;
+  };
+
+  const search = document.getElementById("txn-search");
+  const fromI = document.getElementById("txn-from");
+  const toI = document.getElementById("txn-to");
+  const body = document.getElementById("txn-body");
+  const count = document.getElementById("txn-count");
+  const empty = document.getElementById("txn-empty");
+  const moreWrap = document.getElementById("txn-more");
+  const moreBtn = document.getElementById("txn-more-btn");
+
+  let shown = PAGE;
+  let filtered = TXNS;
+
+  function matches() {
+    const tokens = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const from = fromI.value; // "YYYY-MM-DD" or ""
+    const to = toI.value;
+    return TXNS.filter((t) => {
+      if (from && t.date < from) return false;
+      if (to && t.date > to) return false;
+      for (const tok of tokens) if (!t.hay.includes(tok)) return false;
+      return true;
+    });
+  }
+
+  function rowHtml(t) {
+    const cls = t.cents > 0 ? "pos" : "neg";
+    const cp = t.cp ? '<div class="muted small">' + esc(t.cp) + "</div>" : "";
+    return (
+      "<tr><td>" + t.dateLabel + "</td>" +
+      "<td>" + esc(t.desc) + cp + "</td>" +
+      '<td class="num ' + cls + '">' + t.amountLabel + "</td>" +
+      "<td><form action=\"/transactions/" + t.id + "/categorize\" method=\"post\" class=\"cat-form\">" +
+      '<select name="category_id" onchange="this.form.submit()">' + optsFor(t.catId) + "</select>" +
+      '<label class="rule-check" title="Ustvari pravilo za vse od tega prejemnika">' +
+      '<input type="checkbox" name="create_rule" value="true"> za vse</label>' +
+      "</form></td></tr>"
+    );
+  }
+
+  function render() {
+    const slice = filtered.slice(0, shown);
+    body.innerHTML = slice.map(rowHtml).join("");
+    const n = filtered.length;
+    count.textContent =
+      n === TXNS.length
+        ? n + " transakcij"
+        : n + " od " + TXNS.length + " transakcij";
+    empty.hidden = n !== 0;
+    moreWrap.hidden = shown >= n;
+    if (!moreWrap.hidden) {
+      moreBtn.textContent = "Pokaži več (" + Math.min(PAGE, n - shown) + ")";
+    }
+  }
+
+  function refilter() {
+    filtered = matches();
+    shown = PAGE;
+    render();
+  }
+
+  // Quick date-range presets.
+  function ymd(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+      "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function setRange(kind) {
+    const now = new Date();
+    if (kind === "all") {
+      fromI.value = "";
+      toI.value = "";
+    } else if (kind === "month") {
+      fromI.value = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+      toI.value = ymd(now);
+    } else if (kind === "year") {
+      fromI.value = ymd(new Date(now.getFullYear(), 0, 1));
+      toI.value = ymd(now);
+    } else {
+      const days = parseInt(kind, 10);
+      const from = new Date(now);
+      from.setDate(from.getDate() - days);
+      fromI.value = ymd(from);
+      toI.value = ymd(now);
+    }
+  }
+
+  search.addEventListener("input", refilter);
+  fromI.addEventListener("change", refilter);
+  toI.addEventListener("change", refilter);
+  for (const chip of document.querySelectorAll(".presets .chip")) {
+    chip.addEventListener("click", () => {
+      setRange(chip.dataset.range);
+      refilter();
+    });
+  }
+  moreBtn.addEventListener("click", () => {
+    shown += PAGE;
+    render();
+  });
+
+  render();
+})();
+</script>
 {% endif %}
 {% endblock %}

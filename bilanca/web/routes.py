@@ -271,10 +271,32 @@ def transactions(
     ).all()
     account = session.exec(select(Account).where(Account.user_id == user.id)).first()
     categories = session.exec(select(Category).order_by(Category.kind, Category.name)).all()
+    txns_json = [
+        {
+            "id": t.id,
+            "date": t.booking_date.strftime("%Y-%m-%d"),
+            "dateLabel": t.booking_date.strftime("%d.%m.%Y"),
+            "desc": t.purpose or "",
+            "cp": t.counterparty_name
+            if (t.counterparty_name and t.counterparty_name != t.purpose)
+            else "",
+            "cents": t.amount_cents,
+            "catId": t.category_id,
+        }
+        for t in txns
+    ]
+    cats_json = [{"id": c.id, "name": c.name} for c in categories]
     return templates.TemplateResponse(
         request,
         "transactions.html",
-        {"user": user, "transactions": txns, "account": account, "categories": categories},
+        {
+            "user": user,
+            "transactions": txns,
+            "account": account,
+            "categories": categories,
+            "txns_json": txns_json,
+            "cats_json": cats_json,
+        },
     )
 
 
