@@ -31,7 +31,7 @@
   </div>
 </div>
 
-<p class="muted" id="txn-count"></p>
+<p class="txn-count" id="txn-count"></p>
 
 <table class="txns">
   <thead>
@@ -43,7 +43,7 @@
 <p class="empty-hint muted" id="txn-empty" hidden>Ni zadetkov za izbrane pogoje.</p>
 
 <div class="txn-more" id="txn-more" hidden>
-  <button type="button" class="secondary" id="txn-more-btn">Pokaži več</button>
+  <button type="button" class="txn-more-btn" id="txn-more-btn">Pokaži več</button>
 </div>
 
 <script id="txn-data" type="application/json">{{ txns_json|tojson }}</script>
@@ -116,14 +116,14 @@
     const slice = filtered.slice(0, shown);
     body.innerHTML = slice.map(rowHtml).join("");
     const n = filtered.length;
-    count.textContent =
+    count.innerHTML =
       n === TXNS.length
-        ? n + " transakcij"
-        : n + " od " + TXNS.length + " transakcij";
+        ? "<strong>" + n + "</strong> transakcij"
+        : "<strong>" + n + "</strong> od <strong>" + TXNS.length + "</strong> transakcij";
     empty.hidden = n !== 0;
     moreWrap.hidden = shown >= n;
     if (!moreWrap.hidden) {
-      moreBtn.textContent = "Pokaži več (" + Math.min(PAGE, n - shown) + ")";
+      moreBtn.innerHTML = 'Pokaži več <span class="count">(' + Math.min(PAGE, n - shown) + ")</span>";
     }
   }
 
