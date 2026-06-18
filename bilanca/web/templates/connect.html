@@ -10,14 +10,15 @@
 {% if not configured %}
 <div class="card">
   <h2>Najprej nastavi dostop</h2>
-  <p>Za neposredno povezavo potrebuješ brezplačne poverilnice ponudnika <strong>GoCardless Bank Account Data</strong>:</p>
+  <p>Za neposredno povezavo potrebuješ brezplačen dostop ponudnika <strong>Enable Banking</strong> (deluje tudi za posameznike, brez podjetja):</p>
   <ol>
-    <li>Registriraj se na <a href="https://bankaccountdata.gocardless.com/" target="_blank" rel="noopener">bankaccountdata.gocardless.com</a>.</li>
-    <li>Odpri <em>Developers → User secrets → Create new</em> in skopiraj <strong>Secret ID</strong> ter <strong>Secret Key</strong>.</li>
-    <li>Skopiraj datoteko <code>.env.example</code> v <code>.env</code> in vpiši oba ključa.</li>
+    <li>Prijavi se na <a href="https://enablebanking.com/sign-in/" target="_blank" rel="noopener">enablebanking.com</a> (račun se ustvari ob prvi prijavi z e-pošto).</li>
+    <li>V <em>Control Panel → Applications</em> registriraj novo aplikacijo (okolje <em>Production</em>, način <em>Restricted</em> — povežeš svoje lastne račune). Prenese se <strong>zasebni ključ</strong> (.pem) in dobiš <strong>Application ID</strong>.</li>
+    <li>Kot <em>Redirect URL</em> dodaj: <code>http://127.0.0.1:8000/connect/callback</code></li>
+    <li>Shrani .pem v koren projekta kot <code>enablebanking_private.pem</code>; skopiraj <code>.env.example</code> v <code>.env</code> in vpiši <code>ENABLE_BANKING_APP_ID</code>.</li>
     <li>Znova zaženi aplikacijo.</li>
   </ol>
-  <p class="muted">Za prvi preizkus lahko izbereš testno banko <em>Sandbox Finance</em> — simulira celoten potek brez prave banke.</p>
+  <p class="muted">V načinu Restricted povežeš svoje lastne bančne račune — brez podjetja in brez plačila.</p>
 </div>
 {% endif %}
 
@@ -89,7 +90,7 @@
   <select id="institution" name="institution_id" required>
     <option value="" disabled selected>— izberi —</option>
     {% for inst in institutions %}
-    <option value="{{ inst.id }}" data-name="{{ inst.name }}">{{ inst.name }}</option>
+    <option value="{{ inst.name }}" data-name="{{ inst.name }}">{{ inst.name }}</option>
     {% endfor %}
   </select>
   <input type="hidden" name="institution_name" id="institution_name">

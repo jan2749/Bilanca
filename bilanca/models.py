@@ -115,24 +115,27 @@ class ImportBatch(SQLModel, table=True):
 
 
 class BankConnection(SQLModel, table=True):
-    """Povezava na banko prek PSD2 agregatorja (GoCardless) — ena vrstica na povezan račun.
+    """Povezava na banko prek PSD2 agregatorja (Enable Banking) — ena vrstica na povezan račun.
 
-    Tok: ustvarimo "requisition" (privolitev) → uporabnik potrdi pri banki → banka preusmeri
-    nazaj → dobimo account_id. Privolitev velja 90 dni (expires_at), nato je status "expired".
+    Tok: začnemo privolitev (/auth) → uporabnik potrdi pri banki → banka preusmeri nazaj s kodo
+    → ustvarimo sejo (/sessions) in dobimo račune. Privolitev velja do expires_at (do 90 dni),
+    nato je status "expired".
     """
 
     id: int | None = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
-    provider: str = "gocardless"
-    institution_id: str = ""  # npr. "SANDBOXFINANCE_SFIN0000" ali ID prave banke
+    provider: str = "enablebanking"
+    # institution_id hrani ime banke (aspsp name), kot ga zahteva Enable Banking pri /auth.
+    institution_id: str = ""
     institution_name: str = ""
+    # requisition_id hrani Enable Banking session_id (po potrjeni privolitvi).
     requisition_id: str = Field(default="", index=True)
-    # Naključen ključ, ki ga pošljemo GoCardless in dobimo nazaj v callbacku (povratno preverjanje).
+    # Naključen "state", ki ga pošljemo ob /auth in dobimo nazaj v callbacku (povratno preverjanje).
     reference: str = Field(default="", index=True)
-    # account_id je znan šele po potrjeni privolitvi.
+    # account_id hrani Enable Banking account uid; znan šele po potrjeni privolitvi.
     account_id: str | None = None
     account_iban: str = ""
-    # created → privolitev ustvarjena; linked → račun povezan; expired → potekla; error → napaka.
+    # created → privolitev začeta; linked → račun povezan; expired → potekla; error → napaka.
     status: str = "created"
     created_at: datetime = Field(default_factory=_utcnow)
     expires_at: datetime | None = None

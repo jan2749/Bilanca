@@ -25,6 +25,7 @@ uploads/
 .env
 .env.*
 !.env.example
+*.pem
 
 # Claude Code lokalne nastavitve
 .claude/

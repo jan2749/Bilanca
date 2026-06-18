@@ -48,16 +48,22 @@ STATIC_DIR = WEB_DIR / "static"
 # Privzeta valuta (slovenske banke vodijo EUR).
 DEFAULT_CURRENCY = "EUR"
 
-# ---------------------------------------------------------------- GoCardless (PSD2)
-# Poverilnice agregatorja GoCardless Bank Account Data (prej Nordigen). Pridobiš jih
-# brezplačno na https://bankaccountdata.gocardless.com → Developers → User secrets.
-GOCARDLESS_SECRET_ID = os.environ.get("GOCARDLESS_SECRET_ID", "").strip()
-GOCARDLESS_SECRET_KEY = os.environ.get("GOCARDLESS_SECRET_KEY", "").strip()
-GOCARDLESS_BASE_URL = os.environ.get(
-    "GOCARDLESS_BASE_URL", "https://bankaccountdata.gocardless.com"
+# ---------------------------------------------------------------- Enable Banking (PSD2)
+# Poverilnice agregatorja Enable Banking. Pridobiš jih brezplačno (tudi kot posameznik prek
+# "Restricted Mode") na https://enablebanking.com → Control Panel → registracija aplikacije:
+# dobiš Application ID (kid) in zasebni ključ (.pem), ki ga shraniš lokalno.
+ENABLE_BANKING_APP_ID = os.environ.get("ENABLE_BANKING_APP_ID", "").strip()
+# Pot do zasebnega ključa; privzeto datoteka v korenu projekta (ni v gitu).
+ENABLE_BANKING_KEY_PATH = os.environ.get(
+    "ENABLE_BANKING_KEY_PATH", str(BASE_DIR / "enablebanking_private.pem")
+).strip()
+ENABLE_BANKING_BASE_URL = os.environ.get(
+    "ENABLE_BANKING_BASE_URL", "https://api.enablebanking.com"
 ).rstrip("/")
+# Privzeta država za seznam bank.
+ENABLE_BANKING_COUNTRY = os.environ.get("ENABLE_BANKING_COUNTRY", "SI").strip().upper()
 
 
-def gocardless_configured() -> bool:
-    """True, če sta nastavljena oba GoCardless ključa (sicer je povezava z banko skrita)."""
-    return bool(GOCARDLESS_SECRET_ID and GOCARDLESS_SECRET_KEY)
+def enablebanking_configured() -> bool:
+    """True, če sta nastavljena Application ID in obstoječ zasebni ključ (sicer je povezava skrita)."""
+    return bool(ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH and Path(ENABLE_BANKING_KEY_PATH).is_file())

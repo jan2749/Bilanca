@@ -46,8 +46,18 @@ Source (NkbmCsvSource, ...) → NormalizedTxn → dedup hashing → Transaction 
 ```
 
 - `bilanca/ingest/base.py` — `TransactionSource` protocol and `NormalizedTxn` dataclass.
-  Any new source (e.g. a future PSD2/GoCardless source) just needs to implement `fetch()`
-  returning `NormalizedTxn` objects; everything downstream is unchanged.
+  Any new source just needs to implement `fetch()` returning `NormalizedTxn` objects;
+  everything downstream is unchanged. Two sources exist: `NkbmCsvSource` (manual CSV) and
+  `EnableBankingSource` (direct PSD2 bank connection — see below).
+- `bilanca/ingest/enablebanking.py` + `enablebanking_source.py` — direct bank connection via
+  **Enable Banking** (PSD2 aggregator; free, works for individuals via Restricted Mode, covers
+  SI banks incl. OTP/NKBM). Auth is a JWT (RS256) signed with a private key (`ENABLE_BANKING_APP_ID`
+  as `kid`, key at `ENABLE_BANKING_KEY_PATH`); creds load from `.env` (see `.env.example`).
+  Flow: list ASPSPs → `/auth` (redirect to bank) → callback with `code` → `/sessions` (account
+  uids) → `/accounts/{uid}/transactions`. Transactions use Enable Banking's snake_case schema
+  with `credit_debit_indicator` (CRDT/DBIT) and a **positive** amount — sign is applied in
+  `normalize_txn`. Per-user state lives in the `BankConnection` table; web flow is under
+  `/connect`. If creds aren't configured, `/connect` shows setup instructions instead of failing.
 - `bilanca/ingest/profiles/nkbm.py` — NKBM/OTP Bank@Net CSV parser. Key gotchas: file is
   **cp1250**-encoded (decoded via `decode_bytes`, tries utf-8 variants then cp1250),
   `;`-delimited, amounts use Slovenian decimal commas (`parse_amount`), and a single
