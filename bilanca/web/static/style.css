@@ -58,14 +58,6 @@ h1 { margin-top: 0; }
 .card.result { border-color: var(--pos); }
 .card.error { border-color: var(--neg); }
 
-/* Povezava z banko */
-.row-actions { display: flex; gap: .5rem; align-items: center; }
-.row-actions form { margin: 0; }
-.row-actions button { margin-top: 0; }
-.connect-form { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin: 1rem 0; }
-.connect-form select { padding: .55rem .75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: inherit; }
-.connect-form button { margin-top: 0; }
-
 .dropzone {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .35rem;
   border: 2px dashed var(--border); border-radius: 12px; padding: 3rem 1rem;

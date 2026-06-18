@@ -114,33 +114,6 @@ class ImportBatch(SQLModel, table=True):
     duplicate_count: int = 0  # preskočenih dvojnikov
 
 
-class BankConnection(SQLModel, table=True):
-    """Povezava na banko prek PSD2 agregatorja (Enable Banking) — ena vrstica na povezan račun.
-
-    Tok: začnemo privolitev (/auth) → uporabnik potrdi pri banki → banka preusmeri nazaj s kodo
-    → ustvarimo sejo (/sessions) in dobimo račune. Privolitev velja do expires_at (do 90 dni),
-    nato je status "expired".
-    """
-
-    id: int | None = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-    provider: str = "enablebanking"
-    # institution_id hrani ime banke (aspsp name), kot ga zahteva Enable Banking pri /auth.
-    institution_id: str = ""
-    institution_name: str = ""
-    # requisition_id hrani Enable Banking session_id (po potrjeni privolitvi).
-    requisition_id: str = Field(default="", index=True)
-    # Naključen "state", ki ga pošljemo ob /auth in dobimo nazaj v callbacku (povratno preverjanje).
-    reference: str = Field(default="", index=True)
-    # account_id hrani Enable Banking account uid; znan šele po potrjeni privolitvi.
-    account_id: str | None = None
-    account_iban: str = ""
-    # created → privolitev začeta; linked → račun povezan; expired → potekla; error → napaka.
-    status: str = "created"
-    created_at: datetime = Field(default_factory=_utcnow)
-    expires_at: datetime | None = None
-
-
 class Transaction(SQLModel, table=True):
     """Posamezna bančna transakcija (normalizirana)."""
 
