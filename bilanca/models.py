@@ -114,6 +114,30 @@ class ImportBatch(SQLModel, table=True):
     duplicate_count: int = 0  # preskočenih dvojnikov
 
 
+class BankConnection(SQLModel, table=True):
+    """Povezava na banko prek PSD2 agregatorja (GoCardless) — ena vrstica na povezan račun.
+
+    Tok: ustvarimo "requisition" (privolitev) → uporabnik potrdi pri banki → banka preusmeri
+    nazaj → dobimo account_id. Privolitev velja 90 dni (expires_at), nato je status "expired".
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    provider: str = "gocardless"
+    institution_id: str = ""  # npr. "SANDBOXFINANCE_SFIN0000" ali ID prave banke
+    institution_name: str = ""
+    requisition_id: str = Field(default="", index=True)
+    # Naključen ključ, ki ga pošljemo GoCardless in dobimo nazaj v callbacku (povratno preverjanje).
+    reference: str = Field(default="", index=True)
+    # account_id je znan šele po potrjeni privolitvi.
+    account_id: str | None = None
+    account_iban: str = ""
+    # created → privolitev ustvarjena; linked → račun povezan; expired → potekla; error → napaka.
+    status: str = "created"
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime | None = None
+
+
 class Transaction(SQLModel, table=True):
     """Posamezna bančna transakcija (normalizirana)."""
 

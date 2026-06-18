@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+import secrets
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -22,9 +23,11 @@ from bilanca.auth import (
 )
 from bilanca.categorize.rules import apply_rules, set_category
 from bilanca.categorize.suggest import uncategorized_groups
-from bilanca.config import TEMPLATES_DIR
+from bilanca.config import TEMPLATES_DIR, gocardless_configured
 from bilanca.db import get_session
 from bilanca.ingest.csv_import import NkbmCsvSource
+from bilanca.ingest.gocardless import GoCardlessClient, GoCardlessError
+from bilanca.ingest.gocardless_source import GoCardlessSource
 from bilanca.ingest.importer import import_source
 from bilanca.ingest.profiles.nkbm import NkbmParseError
 from bilanca.insights.recurring import detect as detect_recurring
@@ -40,7 +43,7 @@ from bilanca.insights.trends import (
     spending_by_category,
     yearly_comparison,
 )
-from bilanca.models import Account, Category, ImportBatch, Transaction, User
+from bilanca.models import Account, BankConnection, Category, ImportBatch, Transaction, User
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -551,3 +554,202 @@ def delete_import_batch(
         session.delete(batch)
         session.commit()
     return RedirectResponse(url="/import", status_code=303)
+
+
+# ---------------------------------------------------------------- povezava z banko (PSD2)
+
+# Privolitev (consent) prek PSD2 velja zakonsko največ 90 dni.
+_CONSENT_DAYS = 90
+
+
+def _user_connections(session: Session, user: User) -> list[BankConnection]:
+    return session.exec(
+        select(BankConnection)
+        .where(BankConnection.user_id == user.id)
+        .order_by(BankConnection.created_at.desc())
+    ).all()
+
+
+@router.get("/connect", response_class=HTMLResponse)
+def connect_page(
+    request: Request,
+    msg: str | None = None,
+    error: str | None = None,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    configured = gocardless_configured()
+    institutions: list[dict] = []
+    load_error = error
+    if configured:
+        try:
+            institutions = GoCardlessClient().list_institutions("si")
+        except GoCardlessError as exc:
+            load_error = str(exc)
+    return templates.TemplateResponse(
+        request,
+        "connect.html",
+        {
+            "user": user,
+            "configured": configured,
+            "institutions": institutions,
+            "connections": _user_connections(session, user),
+            "msg": msg,
+            "error": load_error,
+        },
+    )
+
+
+@router.post("/connect/start")
+def connect_start(
+    request: Request,
+    institution_id: str = Form(...),
+    institution_name: str = Form(""),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    if not gocardless_configured():
+        return RedirectResponse("/connect", status_code=303)
+    reference = secrets.token_urlsafe(16)
+    redirect_url = str(request.url_for("connect_callback"))
+    try:
+        client = GoCardlessClient()
+        req = client.create_requisition(institution_id, redirect_url, reference)
+    except GoCardlessError as exc:
+        return RedirectResponse(f"/connect?error={exc}", status_code=303)
+
+    conn = BankConnection(
+        user_id=user.id,
+        institution_id=institution_id,
+        institution_name=institution_name or institution_id,
+        requisition_id=req.get("id", ""),
+        reference=reference,
+        status="created",
+    )
+    session.add(conn)
+    session.commit()
+
+    link = req.get("link")
+    if not link:
+        return RedirectResponse("/connect?error=GoCardless ni vrnil povezave na banko.", status_code=303)
+    # Preusmeri uporabnika na stran banke za potrditev privolitve.
+    return RedirectResponse(link, status_code=303)
+
+
+@router.get("/connect/callback", name="connect_callback")
+def connect_callback(
+    request: Request,
+    ref: str | None = None,
+    error: str | None = None,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    if not ref:
+        return RedirectResponse("/connect?error=Manjka referenca privolitve.", status_code=303)
+    conn = session.exec(
+        select(BankConnection).where(
+            BankConnection.user_id == user.id, BankConnection.reference == ref
+        )
+    ).first()
+    if conn is None:
+        return RedirectResponse("/connect?error=Povezave ni mogoče najti.", status_code=303)
+
+    try:
+        client = GoCardlessClient()
+        req = client.get_requisition(conn.requisition_id)
+        accounts = req.get("accounts", []) or []
+        if not accounts:
+            conn.status = "error"
+            session.add(conn)
+            session.commit()
+            return RedirectResponse(
+                "/connect?error=Banka ni vrnila nobenega računa (privolitev morda ni dokončana).",
+                status_code=303,
+            )
+
+        expires = datetime.now(UTC) + timedelta(days=_CONSENT_DAYS)
+        # Prvi račun nastavimo na obstoječo vrstico, za nadaljnje ustvarimo nove.
+        for i, account_id in enumerate(accounts):
+            try:
+                details = client.get_account_details(account_id)
+                iban = details.get("iban", "")
+            except GoCardlessError:
+                iban = ""
+            target = conn if i == 0 else BankConnection(
+                user_id=user.id,
+                institution_id=conn.institution_id,
+                institution_name=conn.institution_name,
+                requisition_id=conn.requisition_id,
+                reference=conn.reference,
+            )
+            target.account_id = account_id
+            target.account_iban = iban
+            target.status = "linked"
+            target.expires_at = expires
+            session.add(target)
+        session.commit()
+    except GoCardlessError as exc:
+        return RedirectResponse(f"/connect?error={exc}", status_code=303)
+
+    return RedirectResponse("/connect?msg=Banka uspešno povezana.", status_code=303)
+
+
+@router.post("/connect/{conn_id}/sync", response_class=HTMLResponse)
+def connect_sync(
+    request: Request,
+    conn_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    conn = session.get(BankConnection, conn_id)
+    if conn is None or conn.user_id != user.id or not conn.account_id:
+        return RedirectResponse("/connect?error=Povezave ni mogoče najti.", status_code=303)
+    try:
+        client = GoCardlessClient()
+        source = GoCardlessSource(client, conn.account_id, conn.account_iban)
+        batch = import_source(
+            session, source, user, filename=f"GoCardless · {conn.institution_name}"
+        )
+    except GoCardlessError as exc:
+        return RedirectResponse(f"/connect?error={exc}", status_code=303)
+
+    groups = uncategorized_groups(session, user)
+    return templates.TemplateResponse(
+        request,
+        "connect.html",
+        {
+            "user": user,
+            "configured": gocardless_configured(),
+            "institutions": [],
+            "connections": _user_connections(session, user),
+            "result": batch,
+            "uncat_merchants": len(groups),
+            "uncat_txns": sum(g.count for g in groups),
+        },
+    )
+
+
+@router.post("/connect/{conn_id}/delete")
+def connect_delete(
+    conn_id: int,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    conn = session.get(BankConnection, conn_id)
+    if conn is not None and conn.user_id == user.id:
+        # Če ni drugih vrstic z isto privolitvijo, jo prekliči tudi pri GoCardless.
+        siblings = session.exec(
+            select(BankConnection).where(
+                BankConnection.user_id == user.id,
+                BankConnection.requisition_id == conn.requisition_id,
+                BankConnection.id != conn.id,
+            )
+        ).first()
+        if siblings is None and conn.requisition_id:
+            try:
+                GoCardlessClient().delete_requisition(conn.requisition_id)
+            except GoCardlessError:
+                pass  # lokalno vseeno odstranimo
+        session.delete(conn)
+        session.commit()
+    return RedirectResponse(url="/connect", status_code=303)
