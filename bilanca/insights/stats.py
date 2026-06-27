@@ -163,6 +163,36 @@ class MerchantRow:
     tx_count: int
 
 
+def _top_counterparties(
+    session: Session,
+    user_id: int,
+    date_from: date | None,
+    date_to: date | None,
+    limit: int,
+    *,
+    incoming: bool,
+) -> list[MerchantRow]:
+    """Top `limit` nasprotnih strank po skupni vrednosti, padajoče.
+
+    `incoming=False` → odhodki (kam gre denar); `incoming=True` → prihodki (od kod prihaja).
+    """
+    totals: dict[str, int] = defaultdict(int)
+    counts: dict[str, int] = defaultdict(int)
+
+    cond = Transaction.amount_cents > 0 if incoming else Transaction.amount_cents < 0
+    query = _scoped_txns(user_id, date_from, date_to).where(cond)
+    for t in session.exec(query).all():
+        name = (t.counterparty_name or t.purpose or "—").strip()
+        totals[name] += abs(t.amount_cents)
+        counts[name] += 1
+
+    top = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [
+        MerchantRow(name=name, total_eur=round(cents / 100, 2), tx_count=counts[name])
+        for name, cents in top
+    ]
+
+
 def top_merchants(
     session: Session,
     user_id: int,
@@ -171,17 +201,15 @@ def top_merchants(
     limit: int = 10,
 ) -> list[MerchantRow]:
     """Top `limit` prejemnikov po skupni vrednosti odhodkov, padajoče."""
-    totals: dict[str, int] = defaultdict(int)
-    counts: dict[str, int] = defaultdict(int)
+    return _top_counterparties(session, user_id, date_from, date_to, limit, incoming=False)
 
-    query = _scoped_txns(user_id, date_from, date_to).where(Transaction.amount_cents < 0)
-    for t in session.exec(query).all():
-        name = (t.counterparty_name or t.purpose or "—").strip()
-        totals[name] += -t.amount_cents
-        counts[name] += 1
 
-    top = sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:limit]
-    return [
-        MerchantRow(name=name, total_eur=round(cents / 100, 2), tx_count=counts[name])
-        for name, cents in top
-    ]
+def top_payers(
+    session: Session,
+    user_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = 10,
+) -> list[MerchantRow]:
+    """Top `limit` virov prihodkov po skupni vrednosti prilivov, padajoče."""
+    return _top_counterparties(session, user_id, date_from, date_to, limit, incoming=True)

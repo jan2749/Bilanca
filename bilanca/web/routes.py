@@ -33,6 +33,7 @@ from bilanca.insights.stats import (
     spending_by_weekday,
     stats_summary,
     top_merchants,
+    top_payers,
 )
 from bilanca.insights.trends import (
     coverage_gaps,
@@ -439,6 +440,7 @@ def stats_page(
         session, user.id, period_from, period_to, date_from, date_to
     )
     merchants = top_merchants(session, user.id, date_from, date_to)
+    payers = top_payers(session, user.id, date_from, date_to)
 
     # Hitre časovne predloge, sidrane na zadnji uvožen datum.
     presets = []
@@ -477,6 +479,9 @@ def stats_page(
             "merchant_names": [m.name for m in merchants],
             "merchant_values": [m.total_eur for m in merchants],
             "merchant_counts": [m.tx_count for m in merchants],
+            "payer_names": [p.name for p in payers],
+            "payer_values": [p.total_eur for p in payers],
+            "payer_counts": [p.tx_count for p in payers],
         },
     )
 

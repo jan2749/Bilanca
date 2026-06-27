@@ -112,18 +112,27 @@
   </div>
 </div>
 
+<div class="card chart-card">
+  <h2>Povprečna poraba po dnevih v tednu</h2>
+  <div class="chart-box"><canvas id="weekdayChart"></canvas></div>
+  <p class="muted small footnote">Pokaže, katere dneve običajno največ zapraviš.</p>
+</div>
+
 <div class="charts">
-  <div class="card chart-card">
-    <h2>Povprečna poraba po dnevih v tednu</h2>
-    <div class="chart-box"><canvas id="weekdayChart"></canvas></div>
-    <p class="muted small footnote">Pokaže, katere dneve običajno največ zapraviš.</p>
-  </div>
   <div class="card chart-card">
     <h2>Kam gre denar — top prejemniki</h2>
     {% if merchant_names %}
     <div class="chart-box"><canvas id="merchantChart"></canvas></div>
     {% else %}
     <p class="muted">Ni odhodkov v izbranem obdobju.</p>
+    {% endif %}
+  </div>
+  <div class="card chart-card">
+    <h2>Od kod prihaja denar — top viri prihodkov</h2>
+    {% if payer_names %}
+    <div class="chart-box"><canvas id="payerChart"></canvas></div>
+    {% else %}
+    <p class="muted">Ni prihodkov v izbranem obdobju.</p>
     {% endif %}
   </div>
 </div>
@@ -221,6 +230,26 @@
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: { label: c => `${eur(c.parsed.x)} · ${mCounts[c.dataIndex]} transakcij` } }
+      },
+      scales: { x: { beginAtZero: true, ticks: { callback: v => eur(v) } } }
+    }
+  });
+  {% endif %}
+
+  {% if payer_names %}
+  // 6) Top viri prihodkov (vodoravni stolpci)
+  const pCounts = {{ payer_counts|tojson }};
+  new Chart(document.getElementById('payerChart'), {
+    type: 'bar',
+    data: {
+      labels: {{ payer_names|tojson }},
+      datasets: [{ label: 'Skupaj', data: {{ payer_values|tojson }}, backgroundColor: '#4ade80', borderRadius: 5 }]
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => `${eur(c.parsed.x)} · ${pCounts[c.dataIndex]} transakcij` } }
       },
       scales: { x: { beginAtZero: true, ticks: { callback: v => eur(v) } } }
     }

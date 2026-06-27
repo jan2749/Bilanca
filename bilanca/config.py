@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # Korenska mapa projekta (kjer je pyproject.toml).
@@ -12,8 +13,6 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 # Pot do SQLite baze. Lahko se prepise prek okoljske spremenljivke BILANCA_DB.
-import os
-
 DB_PATH = Path(os.environ.get("BILANCA_DB", DATA_DIR / "bilanca.db"))
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
